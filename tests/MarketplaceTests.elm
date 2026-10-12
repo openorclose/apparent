@@ -1,0 +1,132 @@
+module MarketplaceTests exposing (tests)
+
+import Expect
+import Marketplace
+import Test exposing (Test, describe, test)
+
+
+tests : Test
+tests =
+    describe "Marketplace"
+        [ describe "filterListings"
+            [ test "search is case-insensitive and includes neighborhood names" <|
+                \_ ->
+                    Marketplace.filterListings
+                        { query = "MAPLEWOOD"
+                        , category = Nothing
+                        , neighborhood = Nothing
+                        }
+                        Marketplace.sampleListings
+                        |> List.map Marketplace.listingId
+                        |> Expect.equal [ "cordless-drill", "projector", "picnic-basket" ]
+            , test "category and neighborhood filters combine" <|
+                \_ ->
+                    Marketplace.filterListings
+                        { query = ""
+                        , category = Just Marketplace.Outdoors
+                        , neighborhood = Just Marketplace.Riverside
+                        }
+                        Marketplace.sampleListings
+                        |> List.map Marketplace.listingId
+                        |> Expect.equal [ "camping-tent" ]
+            , test "an unknown category cannot be parsed into the domain type" <|
+                \_ ->
+                    Marketplace.categoryFromName "Garden"
+                        |> Expect.equal Nothing
+            , test "an unknown neighborhood cannot be parsed into the domain type" <|
+                \_ ->
+                    Marketplace.neighborhoodFromName "Somewhere"
+                        |> Expect.equal Nothing
+            ]
+        , describe "priceFromInput"
+            [ test "parses free, whole-dollar, and fractional prices" <|
+                \_ ->
+                    [ "0", "12", "12.5", "12.50", "100000" ]
+                        |> List.map (Marketplace.priceFromInput >> Result.map Marketplace.priceLabel)
+                        |> Expect.equal
+                            [ Ok "Free"
+                            , Ok "$12 / day"
+                            , Ok "$12.50 / day"
+                            , Ok "$12.50 / day"
+                            , Ok "$100000 / day"
+                            ]
+            , test "rejects negative, malformed, excessive-precision, and excessive prices" <|
+                \_ ->
+                    [ "", "-1", "one", "1.001", "100000.01" ]
+                        |> List.map Marketplace.priceFromInput
+                        |> Expect.equal
+                            [ Err "Enter a valid daily price."
+                            , Err "Enter a valid daily price."
+                            , Err "Enter a valid daily price."
+                            , Err "Enter a valid price with no more than two decimal places."
+                            , Err "Daily price must be between $0 and $100,000."
+                            ]
+            ]
+        , describe "sorting and pagination"
+            [ test "sorts free items before paid items" <|
+                \_ ->
+                    Marketplace.sortByPrice Marketplace.sampleListings
+                        |> List.take 3
+                        |> List.map (Marketplace.listingPrice >> Marketplace.priceLabel)
+                        |> Expect.equal [ "Free", "Free", "Free" ]
+            , test "calculates at least one page for empty results" <|
+                \_ ->
+                    Marketplace.pageCount 6 0
+                        |> Expect.equal 1
+            , test "pagination clamps pages below the first page" <|
+                \_ ->
+                    Marketplace.paginate 0 2 [ "a", "b", "c" ]
+                        |> Expect.equal [ "a", "b" ]
+            ]
+        , test "listing construction trims titles and rejects empty ones" <|
+            \_ ->
+                let
+                    input title =
+                        { id = " test-item "
+                        , title = title
+                        , category = Marketplace.Tools
+                        , neighborhood = Marketplace.Maplewood
+                        , owner = " Test neighbor "
+                        , price = Marketplace.freePrice
+                        , emoji = "🔧"
+                        , artClass = "art-sand"
+                        , description = ""
+                        }
+                in
+                ( Marketplace.createListing (input "  Hand saw  ")
+                    |> Result.map
+                        (\listing ->
+                            ( Marketplace.listingTitle listing
+                            , Marketplace.listingId listing
+                            , Marketplace.listingOwner listing
+                            )
+                        )
+                , Marketplace.createListing (input "   ")
+                )
+                    |> Expect.equal
+                        ( Ok ( "Hand saw", "test-item", "Test neighbor" )
+                        , Err "Add a name for your item before sharing it."
+                        )
+        , test "listing creation rejects missing identity fields" <|
+            \_ ->
+                let
+                    base =
+                        { id = "test-item"
+                        , title = "A valid item"
+                        , category = Marketplace.Tools
+                        , neighborhood = Marketplace.Maplewood
+                        , owner = "Test neighbor"
+                        , price = Marketplace.freePrice
+                        , emoji = "🔧"
+                        , artClass = "art-sand"
+                        , description = ""
+                        }
+                in
+                ( Marketplace.createListing { base | id = " " }
+                , Marketplace.createListing { base | owner = " " }
+                )
+                    |> Expect.equal
+                        ( Err "A listing needs an ID."
+                        , Err "A listing needs an owner."
+                        )
+        ]
