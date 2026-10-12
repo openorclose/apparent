@@ -1,21 +1,27 @@
 module Marketplace exposing
     ( Category(..)
+    , ContactInfo
     , Filter
     , Listing
     , ListingInput
     , Neighborhood(..)
     , Price
+    , PublishedListing
     , SortOrder(..)
     , categories
     , categoryFromName
     , categoryName
+    , contactText
     , createListing
+    , expireListings
     , filterListings
     , freePrice
     , listingArtClass
     , listingCategory
+    , listingContact
     , listingDescription
     , listingEmoji
+    , listingExpiresAt
     , listingId
     , listingNeighborhood
     , listingOwner
@@ -26,13 +32,21 @@ module Marketplace exposing
     , neighborhoods
     , pageCount
     , paginate
+    , priceFromCents
     , priceFromInput
     , priceLabel
+    , publishListing
+    , publishedListing
+    , publishedListingDecoder
+    , publishedListingEncoder
     , sampleListings
     , sortByPrice
+    , weekInMilliseconds
     )
 
 import Char
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
 import List
 import String
 
@@ -56,6 +70,10 @@ type Price
     | DailyPrice Int
 
 
+type ContactInfo
+    = ContactInfo String
+
+
 freePrice : Price
 freePrice =
     Free
@@ -77,6 +95,7 @@ type alias ListingFields =
     , neighborhood : Neighborhood
     , owner : String
     , price : Price
+    , contact : ContactInfo
     , emoji : String
     , artClass : String
     , description : String
@@ -94,10 +113,35 @@ type alias ListingInput =
     , neighborhood : Neighborhood
     , owner : String
     , price : Price
+    , contact : String
     , emoji : String
     , artClass : String
     , description : String
     }
+
+
+type PublishedListing
+    = PublishedListing Listing Int
+
+
+type alias ListingWireBase =
+    { id : String
+    , title : String
+    , category : String
+    , neighborhood : String
+    , owner : String
+    , priceCents : Int
+    , contact : String
+    , emoji : String
+    , artClass : String
+    , description : String
+    , expiresAt : Int
+    }
+
+
+weekInMilliseconds : Int
+weekInMilliseconds =
+    7 * 24 * 60 * 60 * 1000
 
 
 type alias Filter =
@@ -176,6 +220,18 @@ createListing input =
     else if String.trim input.owner == "" then
         Err "A listing needs an owner."
 
+    else if String.trim input.contact == "" then
+        Err "Add at least one way for a neighbor to contact you."
+
+    else if String.length (String.trim input.contact) > 500 then
+        Err "Contact details must be 500 characters or fewer."
+
+    else if String.length (String.trim input.title) > 120 then
+        Err "Listing names must be 120 characters or fewer."
+
+    else if String.length input.description > 2000 then
+        Err "Listing details must be 2,000 characters or fewer."
+
     else
         Ok
             (Listing
@@ -185,6 +241,7 @@ createListing input =
                 , neighborhood = input.neighborhood
                 , owner = String.trim input.owner
                 , price = input.price
+                , contact = ContactInfo (String.trim input.contact)
                 , emoji = input.emoji
                 , artClass = input.artClass
                 , description = input.description
@@ -207,6 +264,16 @@ listingTitle (Listing fields) =
 listingCategory : Listing -> Category
 listingCategory (Listing fields) =
     fields.category
+
+
+listingContact : Listing -> ContactInfo
+listingContact (Listing fields) =
+    fields.contact
+
+
+contactText : ContactInfo -> String
+contactText (ContactInfo contact) =
+    contact
 
 
 listingNeighborhood : Listing -> Neighborhood
@@ -237,6 +304,21 @@ listingArtClass (Listing fields) =
 listingDescription : Listing -> String
 listingDescription (Listing fields) =
     fields.description
+
+
+priceFromCents : Int -> Result String Price
+priceFromCents cents =
+    if cents < 0 then
+        Err "Price cannot be negative."
+
+    else if cents > 10000000 then
+        Err "Daily price must be between $0 and $100,000."
+
+    else if cents == 0 then
+        Ok Free
+
+    else
+        Ok (DailyPrice cents)
 
 
 priceFromInput : String -> Result String Price
@@ -398,20 +480,136 @@ paginate page size items =
 
 sampleListings : List Listing
 sampleListings =
-    [ makeSampleListing "cordless-drill" "Cordless drill set" Tools Maplewood "Maya" Free "🛠️" "art-sand" "A handy 18V drill with two batteries and a full set of bits. Great for shelves, furniture, and weekend projects."
-    , makeSampleListing "camping-tent" "Two-person camping tent" Outdoors Riverside "Jordan" (DailyPrice 1200) "⛺" "art-green" "Lightweight, waterproof tent with a footprint and rain fly. Packs down small and is ready for your next trip."
-    , makeSampleListing "standing-mixer" "Stand mixer" Home OakHill "Priya" (DailyPrice 800) "🥣" "art-pink" "A reliable mixer with whisk, paddle, and dough hook attachments. Happy to share recipe tips too."
-    , makeSampleListing "projector" "Portable projector" Electronics Maplewood "Alex" (DailyPrice 1500) "📽️" "art-blue" "1080p portable projector with HDMI cable. Makes backyard movie nights easy."
-    , makeSampleListing "basketball" "Outdoor basketball" Sports Riverside "Sam" Free "🏀" "art-orange" "A well-loved size 7 basketball. Borrow it for the afternoon and bring it back with a little air."
-    , makeSampleListing "pressure-washer" "Electric pressure washer" Tools OakHill "Lee" (DailyPrice 2000) "🚿" "art-lilac" "Compact pressure washer with several spray tips. Perfect for patios, bikes, and garden furniture."
-    , makeSampleListing "picnic-basket" "Picnic basket for four" Outdoors Maplewood "Nina" (DailyPrice 500) "🧺" "art-yellow" "A roomy woven basket with reusable plates, cups, and cutlery for four people."
-    , makeSampleListing "sewing-machine" "Beginner sewing machine" Home Riverside "Chris" (DailyPrice 1000) "🧵" "art-mint" "Easy-to-use sewing machine with a few thread colors and a simple instruction booklet."
-    , makeSampleListing "bike-pump" "Floor bike pump" Sports OakHill "Taylor" Free "🚲" "art-blue" "A sturdy floor pump with a pressure gauge and adapters for common bike valves."
+    [ makeSampleListing "cordless-drill" "Cordless drill set" Tools Maplewood "Maya" Free "maya@example.test" "🛠️" "art-sand" "A handy 18V drill with two batteries and a full set of bits. Great for shelves, furniture, and weekend projects."
+    , makeSampleListing "camping-tent" "Two-person camping tent" Outdoors Riverside "Jordan" (DailyPrice 1200) "jordan@example.test" "⛺" "art-green" "Lightweight, waterproof tent with a footprint and rain fly. Packs down small and is ready for your next trip."
+    , makeSampleListing "standing-mixer" "Stand mixer" Home OakHill "Priya" (DailyPrice 800) "priya@example.test" "🥣" "art-pink" "A reliable mixer with whisk, paddle, and dough hook attachments. Happy to share recipe tips too."
+    , makeSampleListing "projector" "Portable projector" Electronics Maplewood "Alex" (DailyPrice 1500) "alex@example.test" "📽️" "art-blue" "1080p portable projector with HDMI cable. Makes backyard movie nights easy."
+    , makeSampleListing "basketball" "Outdoor basketball" Sports Riverside "Sam" Free "sam@example.test" "🏀" "art-orange" "A well-loved size 7 basketball. Borrow it for the afternoon and bring it back with a little air."
+    , makeSampleListing "pressure-washer" "Electric pressure washer" Tools OakHill "Lee" (DailyPrice 2000) "lee@example.test" "🚿" "art-lilac" "Compact pressure washer with several spray tips. Perfect for patios, bikes, and garden furniture."
+    , makeSampleListing "picnic-basket" "Picnic basket for four" Outdoors Maplewood "Nina" (DailyPrice 500) "nina@example.test" "🧺" "art-yellow" "A roomy woven basket with reusable plates, cups, and cutlery for four people."
+    , makeSampleListing "sewing-machine" "Beginner sewing machine" Home Riverside "Chris" (DailyPrice 1000) "chris@example.test" "🧵" "art-mint" "Easy-to-use sewing machine with a few thread colors and a simple instruction booklet."
+    , makeSampleListing "bike-pump" "Floor bike pump" Sports OakHill "Taylor" Free "taylor@example.test" "🚲" "art-blue" "A sturdy floor pump with a pressure gauge and adapters for common bike valves."
     ]
 
 
-makeSampleListing : String -> String -> Category -> Neighborhood -> String -> Price -> String -> String -> String -> Listing
-makeSampleListing id title category neighborhood owner price emoji artClass description =
+publishListing : Int -> Listing -> PublishedListing
+publishListing createdAt listing =
+    PublishedListing listing (createdAt + weekInMilliseconds)
+
+
+publishedListing : PublishedListing -> Listing
+publishedListing (PublishedListing listing _) =
+    listing
+
+
+listingExpiresAt : PublishedListing -> Int
+listingExpiresAt (PublishedListing _ expiresAt) =
+    expiresAt
+
+
+expireListings : Int -> List PublishedListing -> List PublishedListing
+expireListings now =
+    List.filter (\published -> now < listingExpiresAt published)
+
+
+publishedListingEncoder : PublishedListing -> Encode.Value
+publishedListingEncoder (PublishedListing (Listing fields) expiresAt) =
+    Encode.object
+        [ ( "id", Encode.string fields.id )
+        , ( "title", Encode.string (listingTitle (Listing fields)) )
+        , ( "category", Encode.string (categoryName fields.category) )
+        , ( "neighborhood", Encode.string (neighborhoodName fields.neighborhood) )
+        , ( "owner", Encode.string fields.owner )
+        , ( "priceCents", Encode.int (priceCents fields.price) )
+        , ( "contact", Encode.string (contactText fields.contact) )
+        , ( "emoji", Encode.string fields.emoji )
+        , ( "artClass", Encode.string fields.artClass )
+        , ( "description", Encode.string fields.description )
+        , ( "expiresAt", Encode.int expiresAt )
+        ]
+
+
+publishedListingDecoder : Decoder PublishedListing
+publishedListingDecoder =
+    Decode.andThen
+        (\wire ->
+            case ( categoryFromName wire.category, neighborhoodFromName wire.neighborhood, priceFromCents wire.priceCents ) of
+                ( Just category, Just neighborhood, Ok price ) ->
+                    case
+                        createListing
+                            { id = wire.id
+                            , title = wire.title
+                            , category = category
+                            , neighborhood = neighborhood
+                            , owner = wire.owner
+                            , price = price
+                            , contact = wire.contact
+                            , emoji = wire.emoji
+                            , artClass = wire.artClass
+                            , description = wire.description
+                            }
+                    of
+                        Ok listing ->
+                            Decode.succeed (PublishedListing listing wire.expiresAt)
+
+                        Err message ->
+                            Decode.fail message
+
+                _ ->
+                    Decode.fail "Stored listing has an invalid category, neighborhood, or price."
+        )
+        (Decode.map8
+            (\id title category neighborhood owner cents contact emoji ->
+                { id = id
+                , title = title
+                , category = category
+                , neighborhood = neighborhood
+                , owner = owner
+                , priceCents = cents
+                , contact = contact
+                , emoji = emoji
+                , artClass = ""
+                , description = ""
+                , expiresAt = 0
+                }
+            )
+            (Decode.field "id" Decode.string)
+            (Decode.field "title" Decode.string)
+            (Decode.field "category" Decode.string)
+            (Decode.field "neighborhood" Decode.string)
+            (Decode.field "owner" Decode.string)
+            (Decode.field "priceCents" Decode.int)
+            (Decode.field "contact" Decode.string)
+            (Decode.field "emoji" Decode.string)
+            |> Decode.andThen
+                (\partial ->
+                    Decode.map3
+                        (\artClass description expiresAt ->
+                            { partial
+                                | artClass = artClass
+                                , description = description
+                                , expiresAt = expiresAt
+                            }
+                        )
+                        (Decode.field "artClass" Decode.string)
+                        (Decode.field "description" Decode.string)
+                        (Decode.field "expiresAt" Decode.int)
+                )
+        )
+
+
+priceCents : Price -> Int
+priceCents price =
+    case price of
+        Free ->
+            0
+
+        DailyPrice cents ->
+            cents
+
+
+makeSampleListing : String -> String -> Category -> Neighborhood -> String -> Price -> String -> String -> String -> String -> Listing
+makeSampleListing id title category neighborhood owner price contact emoji artClass description =
     Listing
         { id = id
         , title = NonEmptyTitle title
@@ -419,6 +617,7 @@ makeSampleListing id title category neighborhood owner price emoji artClass desc
         , neighborhood = neighborhood
         , owner = owner
         , price = price
+        , contact = ContactInfo contact
         , emoji = emoji
         , artClass = artClass
         , description = description

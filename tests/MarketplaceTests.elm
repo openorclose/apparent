@@ -1,6 +1,8 @@
 module MarketplaceTests exposing (tests)
 
 import Expect
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Marketplace
 import Test exposing (Test, describe, test)
 
@@ -88,6 +90,7 @@ tests =
                         , neighborhood = Marketplace.Maplewood
                         , owner = " Test neighbor "
                         , price = Marketplace.freePrice
+                        , contact = " maya@example.test "
                         , emoji = "🔧"
                         , artClass = "art-sand"
                         , description = ""
@@ -96,15 +99,21 @@ tests =
                 ( Marketplace.createListing (input "  Hand saw  ")
                     |> Result.map
                         (\listing ->
-                            ( Marketplace.listingTitle listing
-                            , Marketplace.listingId listing
-                            , Marketplace.listingOwner listing
-                            )
+                            { title = Marketplace.listingTitle listing
+                            , id = Marketplace.listingId listing
+                            , owner = Marketplace.listingOwner listing
+                            , contact = Marketplace.contactText (Marketplace.listingContact listing)
+                            }
                         )
                 , Marketplace.createListing (input "   ")
                 )
                     |> Expect.equal
-                        ( Ok ( "Hand saw", "test-item", "Test neighbor" )
+                        ( Ok
+                            { title = "Hand saw"
+                            , id = "test-item"
+                            , owner = "Test neighbor"
+                            , contact = "maya@example.test"
+                            }
                         , Err "Add a name for your item before sharing it."
                         )
         , test "listing creation rejects missing identity fields" <|
@@ -117,6 +126,7 @@ tests =
                         , neighborhood = Marketplace.Maplewood
                         , owner = "Test neighbor"
                         , price = Marketplace.freePrice
+                        , contact = "neighbor@example.test"
                         , emoji = "🔧"
                         , artClass = "art-sand"
                         , description = ""
@@ -129,4 +139,77 @@ tests =
                         ( Err "A listing needs an ID."
                         , Err "A listing needs an owner."
                         )
+        , test "listing creation requires contact information" <|
+            \_ ->
+                let
+                    input =
+                        { id = "test-item"
+                        , title = "A valid item"
+                        , category = Marketplace.Tools
+                        , neighborhood = Marketplace.Maplewood
+                        , owner = "Test neighbor"
+                        , price = Marketplace.freePrice
+                        , contact = " "
+                        , emoji = "🔧"
+                        , artClass = "art-sand"
+                        , description = ""
+                        }
+                in
+                Marketplace.createListing input
+                    |> Expect.equal (Err "Add at least one way for a neighbor to contact you.")
+        , describe "seven-day expiry and persistence format"
+            [ test "listings remain available until exactly seven days have elapsed" <|
+                \_ ->
+                    Marketplace.sampleListings
+                        |> List.take 1
+                        |> List.map
+                            (\listing ->
+                                let
+                                    published =
+                                        Marketplace.publishListing 1000 listing
+                                in
+                                ( List.length (Marketplace.expireListings (1000 + Marketplace.weekInMilliseconds - 1) [ published ])
+                                , List.length (Marketplace.expireListings (1000 + Marketplace.weekInMilliseconds) [ published ])
+                                , Marketplace.listingExpiresAt published
+                                )
+                            )
+                        |> Expect.equal [ ( 1, 0, 1000 + Marketplace.weekInMilliseconds ) ]
+            , test "JSON storage round-trips each listing's contact and expiry" <|
+                \_ ->
+                    let
+                        roundTrip listing =
+                            let
+                                published =
+                                    Marketplace.publishListing 1000 listing
+
+                                decoded =
+                                    Marketplace.publishedListingEncoder published
+                                        |> Encode.encode 0
+                                        |> Decode.decodeString Marketplace.publishedListingDecoder
+                            in
+                            decoded
+                                |> Result.map
+                                    (\restored ->
+                                        ( Marketplace.listingId (Marketplace.publishedListing restored)
+                                        , Marketplace.contactText
+                                            (Marketplace.listingContact (Marketplace.publishedListing restored))
+                                        , Marketplace.listingExpiresAt restored
+                                        )
+                                    )
+                                |> Result.mapError Decode.errorToString
+                    in
+                    Marketplace.sampleListings
+                        |> List.map roundTrip
+                        |> Expect.equal
+                            (List.map
+                                (\listing ->
+                                    Ok
+                                        ( Marketplace.listingId listing
+                                        , Marketplace.contactText (Marketplace.listingContact listing)
+                                        , 1000 + Marketplace.weekInMilliseconds
+                                        )
+                                )
+                                Marketplace.sampleListings
+                            )
+            ]
         ]

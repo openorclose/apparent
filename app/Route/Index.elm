@@ -1,17 +1,23 @@
 module Route.Index exposing (ActionData, Data, Model, Msg, route)
 
 import BackendTask exposing (BackendTask)
+import BackendTask.Time
 import Effect exposing (Effect)
 import FatalError exposing (FatalError)
 import Head
 import Html
 import Html.Attributes as Attr
 import Html.Events as Events
+import Http
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Marketplace exposing (Listing)
 import PagesMsg exposing (PagesMsg)
 import RouteBuilder exposing (App, StatefulRoute)
 import Shared
 import String
+import Task
+import Time
 import UrlPath exposing (UrlPath)
 import View exposing (View)
 
@@ -22,9 +28,12 @@ type alias Model =
     , neighborhood : Maybe Marketplace.Neighborhood
     , sortOrder : Marketplace.SortOrder
     , page : Int
-    , addedListings : List Listing
+    , now : Int
+    , sampleListings : List Marketplace.PublishedListing
+    , serverListings : List Marketplace.PublishedListing
     , dialog : Dialog
     , draft : ListingDraft
+    , submission : Submission
     , notice : Maybe String
     }
 
@@ -35,11 +44,17 @@ type Dialog
     | ListingDetailsDialog String
 
 
+type Submission
+    = ReadyToSubmit
+    | Submitting
+
+
 type alias ListingDraft =
     { title : String
     , category : Marketplace.Category
     , neighborhood : Marketplace.Neighborhood
     , price : String
+    , contact : String
     , description : String
     }
 
@@ -56,11 +71,14 @@ type Msg
     | CategoryDraftChanged String
     | NeighborhoodDraftChanged String
     | PriceChanged String
+    | ContactChanged String
     | DescriptionChanged String
     | CreateListing
+    | ListingCreated (Result Http.Error Marketplace.PublishedListing)
+    | ListingsLoaded (Result Http.Error (List Marketplace.PublishedListing))
+    | ClockUpdated Time.Posix
     | OpenListing String
     | CloseListing
-    | ContactOwner
     | DismissNotice
 
 
@@ -69,7 +87,8 @@ type alias RouteParams =
 
 
 type alias Data =
-    { listings : List Listing
+    { generatedAt : Int
+    , listings : List Marketplace.PublishedListing
     }
 
 
@@ -93,7 +112,14 @@ route =
 
 data : BackendTask FatalError Data
 data =
-    BackendTask.succeed { listings = Marketplace.sampleListings }
+    BackendTask.map2
+        (\generatedAt listings ->
+            { generatedAt = Time.posixToMillis generatedAt
+            , listings = List.map (Marketplace.publishListing (Time.posixToMillis generatedAt)) listings
+            }
+        )
+        BackendTask.Time.now
+        (BackendTask.succeed Marketplace.sampleListings)
 
 
 init : App Data ActionData RouteParams -> Shared.Model -> ( Model, Effect Msg )
@@ -103,18 +129,25 @@ init app sharedModel =
       , neighborhood = Nothing
       , sortOrder = Marketplace.Recommended
       , page = 1
-      , addedListings = []
+      , now = app.data.generatedAt
+      , sampleListings = app.data.listings
+      , serverListings = []
       , dialog = NoDialog
       , draft =
             { title = ""
             , category = Marketplace.Tools
             , neighborhood = Marketplace.Maplewood
             , price = "0"
+            , contact = ""
             , description = ""
             }
+      , submission = ReadyToSubmit
       , notice = Nothing
       }
-    , Effect.none
+    , Effect.batch
+        [ Effect.fromCmd (Task.perform ClockUpdated Time.now)
+        , Effect.fromCmd loadListings
+        ]
     )
 
 
@@ -190,25 +223,94 @@ update app shared msg model =
         PriceChanged price ->
             ( { model | draft = updateDraft model.draft (\draft -> { draft | price = price }) }, Effect.none )
 
+        ContactChanged contact ->
+            ( { model | draft = updateDraft model.draft (\draft -> { draft | contact = contact }) }, Effect.none )
+
         DescriptionChanged description ->
             ( { model | draft = updateDraft model.draft (\draft -> { draft | description = description }) }, Effect.none )
 
         CreateListing ->
-            createListing model
+            if model.submission == Submitting then
+                ( model, Effect.none )
+
+            else
+                submitListing model
+
+        ListingCreated result ->
+            case result of
+                Ok published ->
+                    ( { model
+                        | serverListings = published :: model.serverListings
+                        , dialog = NoDialog
+                        , draft = emptyDraft
+                        , submission = ReadyToSubmit
+                        , notice = Just "Your item is live for the next 7 days. Share your contact details and neighbors can reach you directly."
+                      }
+                    , Effect.none
+                    )
+
+                Err error ->
+                    ( { model
+                        | submission = ReadyToSubmit
+                        , notice = Just ("Could not save your listing. " ++ httpErrorMessage error)
+                      }
+                    , Effect.none
+                    )
+
+        ListingsLoaded result ->
+            case result of
+                Ok listings ->
+                    ( { model | serverListings = mergeListings listings model.serverListings }, Effect.none )
+
+                Err error ->
+                    ( { model
+                        | notice = Just ("Could not load shared listings from the server. " ++ httpErrorMessage error)
+                      }
+                    , Effect.none
+                    )
+
+        ClockUpdated currentTime ->
+            let
+                now =
+                    Time.posixToMillis currentTime
+
+                samples =
+                    Marketplace.expireListings now model.sampleListings
+
+                serverListings =
+                    Marketplace.expireListings now model.serverListings
+
+                listingStillExists listingId =
+                    List.any
+                        (\published -> Marketplace.listingId (Marketplace.publishedListing published) == listingId)
+                        (samples ++ serverListings)
+
+                dialog =
+                    case model.dialog of
+                        ListingDetailsDialog listingId ->
+                            if listingStillExists listingId then
+                                model.dialog
+
+                            else
+                                NoDialog
+
+                        _ ->
+                            model.dialog
+            in
+            ( { model
+                | now = now
+                , sampleListings = samples
+                , serverListings = serverListings
+                , dialog = dialog
+              }
+            , Effect.fromCmd loadListings
+            )
 
         OpenListing listingId ->
             ( { model | dialog = ListingDetailsDialog listingId, notice = Nothing }, Effect.none )
 
         CloseListing ->
             ( { model | dialog = NoDialog }, Effect.none )
-
-        ContactOwner ->
-            ( { model
-                | dialog = NoDialog
-                , notice = Just "Neighbor messaging is coming soon. No message has been sent."
-              }
-            , Effect.none
-            )
 
         DismissNotice ->
             ( { model | notice = Nothing }, Effect.none )
@@ -219,63 +321,110 @@ updateDraft draft transform =
     transform draft
 
 
-createListing : Model -> ( Model, Effect Msg )
-createListing model =
-    let
-        price =
-            Marketplace.priceFromInput model.draft.price
-    in
-    case price of
-        Err message ->
+submitListing : Model -> ( Model, Effect Msg )
+submitListing model =
+    case ( Marketplace.priceFromInput model.draft.price, Marketplace.categoryFromName (Marketplace.categoryName model.draft.category) ) of
+        ( Err message, _ ) ->
             ( { model | notice = Just message }, Effect.none )
 
-        Ok validPrice ->
-            let
-                result =
-                    Marketplace.createListing
-                        { id = "shared-item-" ++ String.fromInt (List.length model.addedListings + 1)
-                        , title = model.draft.title
-                        , category = model.draft.category
-                        , neighborhood = model.draft.neighborhood
-                        , owner = "You"
-                        , price = validPrice
-                        , emoji = "📦"
-                        , artClass = "art-mint"
-                        , description =
-                            if String.trim model.draft.description == "" then
-                                "A neighbor has added this item to the community."
+        ( _, Nothing ) ->
+            ( { model | notice = Just "Choose a valid listing category." }, Effect.none )
 
-                            else
-                                String.trim model.draft.description
-                        }
-            in
-            case result of
+        ( Ok price, Just category ) ->
+            case
+                Marketplace.createListing
+                    { id = "validation-only"
+                    , title = model.draft.title
+                    , category = category
+                    , neighborhood = model.draft.neighborhood
+                    , owner = "A neighbor"
+                    , price = price
+                    , contact = model.draft.contact
+                    , emoji = "📦"
+                    , artClass = "art-mint"
+                    , description = model.draft.description
+                    }
+            of
                 Err message ->
                     ( { model | notice = Just message }, Effect.none )
 
-                Ok listing ->
-                    ( { model
-                        | addedListings = listing :: model.addedListings
-                        , dialog = NoDialog
-                        , draft =
-                            { title = ""
-                            , category = Marketplace.Tools
-                            , neighborhood = Marketplace.Maplewood
-                            , price = "0"
-                            , description = ""
+                Ok _ ->
+                    ( { model | submission = Submitting, notice = Nothing }
+                    , Effect.fromCmd
+                        (Http.post
+                            { url = "/api/listings"
+                            , body = Http.jsonBody (listingRequestEncoder model.draft)
+                            , expect = Http.expectJson ListingCreated Marketplace.publishedListingDecoder
                             }
-                        , category = Nothing
-                        , neighborhood = Nothing
-                        , page = 1
-                        , notice = Just "Your item is now listed for this visit."
-                      }
-                    , Effect.none
+                        )
                     )
+
+
+listingRequestEncoder : ListingDraft -> Encode.Value
+listingRequestEncoder draft =
+    Encode.object
+        [ ( "title", Encode.string draft.title )
+        , ( "category", Encode.string (Marketplace.categoryName draft.category) )
+        , ( "neighborhood", Encode.string (Marketplace.neighborhoodName draft.neighborhood) )
+        , ( "price", Encode.string draft.price )
+        , ( "contact", Encode.string draft.contact )
+        , ( "description", Encode.string draft.description )
+        ]
+
+
+emptyDraft : ListingDraft
+emptyDraft =
+    { title = ""
+    , category = Marketplace.Tools
+    , neighborhood = Marketplace.Maplewood
+    , price = "0"
+    , contact = ""
+    , description = ""
+    }
+
+
+loadListings : Cmd Msg
+loadListings =
+    Http.get
+        { url = "/api/listings"
+        , expect = Http.expectJson ListingsLoaded (Decode.list Marketplace.publishedListingDecoder)
+        }
+
+
+mergeListings : List Marketplace.PublishedListing -> List Marketplace.PublishedListing -> List Marketplace.PublishedListing
+mergeListings latest existing =
+    let
+        latestIds =
+            List.map (Marketplace.listingId << Marketplace.publishedListing) latest
+
+        notAlreadyLoaded listing =
+            not (List.member (Marketplace.listingId (Marketplace.publishedListing listing)) latestIds)
+    in
+    latest ++ List.filter notAlreadyLoaded existing
+
+
+httpErrorMessage : Http.Error -> String
+httpErrorMessage error =
+    case error of
+        Http.BadUrl _ ->
+            "The server URL was invalid."
+
+        Http.Timeout ->
+            "The request timed out. Please try again."
+
+        Http.NetworkError ->
+            "The server could not be reached. Please try again."
+
+        Http.BadStatus status ->
+            "The server returned status " ++ String.fromInt status ++ "."
+
+        Http.BadBody _ ->
+            "The server returned an unreadable response."
 
 
 subscriptions : RouteParams -> UrlPath -> Shared.Model -> Model -> Sub Msg
 subscriptions routeParams path sharedModel model =
-    Sub.none
+    Time.every 30000 ClockUpdated
 
 
 head : App Data ActionData RouteParams -> List Head.Tag
@@ -287,7 +436,10 @@ view : App Data ActionData RouteParams -> Shared.Model -> Model -> View (PagesMs
 view app sharedModel model =
     let
         allListings =
-            model.addedListings ++ app.data.listings
+            List.map Marketplace.publishedListing (Marketplace.expireListings model.now (model.sampleListings ++ model.serverListings))
+
+        activePublishedListings =
+            Marketplace.expireListings model.now (model.sampleListings ++ model.serverListings)
 
         filteredListings =
             Marketplace.filterListings
@@ -310,7 +462,9 @@ view app sharedModel model =
         activeListing =
             case model.dialog of
                 ListingDetailsDialog listingId ->
-                    List.filter (\listing -> Marketplace.listingId listing == listingId) allListings
+                    List.filter
+                        (\published -> Marketplace.listingId (Marketplace.publishedListing published) == listingId)
+                        activePublishedListings
                         |> List.head
 
                 _ ->
@@ -340,7 +494,7 @@ view app sharedModel model =
 
             ListingDetailsDialog _ ->
                 activeListing
-                    |> Maybe.map listingDialog
+                    |> Maybe.map (listingDialog model.now)
                     |> Maybe.withDefault (Html.text "")
 
             NoDialog ->
@@ -606,12 +760,14 @@ createDialog model =
                     ]
                 , closeButton HideCreateForm
                 ]
-            , Html.p [ Attr.class "dialog-intro" ] [ Html.text "Add an item to the neighborhood shelf. This prototype keeps new listings in this page only." ]
+            , Html.p [ Attr.class "dialog-intro" ] [ Html.text "Your listing is saved on the server and stays up for 7 days. Add a contact method that neighbors can use directly." ]
+            , Html.p [ Attr.class "contact-privacy-note" ] [ Html.text "Contact details are visible to everyone who can view the listing. Only share information you are comfortable making public." ]
             , Html.label [ Attr.class "field-label" ]
                 [ Html.text "Item name"
                 , Html.input
                     [ Attr.value model.draft.title
                     , Attr.placeholder "e.g. Cordless drill set"
+                    , Attr.maxlength 120
                     , Events.onInput (TitleChanged >> PagesMsg.fromMsg)
                     ]
                     []
@@ -664,25 +820,62 @@ createDialog model =
                     ]
                 ]
             , Html.label [ Attr.class "field-label" ]
+                [ Html.text "How can neighbors contact you?"
+                , Html.textarea
+                    [ Attr.value model.draft.contact
+                    , Attr.placeholder "Phone, email, Telegram, WhatsApp, or any other contact details"
+                    , Attr.rows 2
+                    , Attr.maxlength 500
+                    , Events.onInput (ContactChanged >> PagesMsg.fromMsg)
+                    ]
+                    []
+                ]
+            , Html.label [ Attr.class "field-label" ]
                 [ Html.text "A few details (optional)"
                 , Html.textarea
                     [ Attr.value model.draft.description
                     , Attr.placeholder "What should a neighbor know before borrowing it?"
                     , Attr.rows 3
+                    , Attr.maxlength 2000
                     , Events.onInput (DescriptionChanged >> PagesMsg.fromMsg)
                     ]
                     []
                 ]
             , Html.div [ Attr.class "dialog-actions" ]
-                [ Html.button [ Attr.class "button button-secondary", Events.onClick (PagesMsg.fromMsg HideCreateForm) ] [ Html.text "Maybe later" ]
-                , Html.button [ Attr.class "button button-primary", Events.onClick (PagesMsg.fromMsg CreateListing) ] [ Html.text "Add to the shelf" ]
+                [ Html.button
+                    [ Attr.class "button button-secondary"
+                    , Attr.disabled (model.submission == Submitting)
+                    , Events.onClick (PagesMsg.fromMsg HideCreateForm)
+                    ]
+                    [ Html.text "Maybe later" ]
+                , Html.button
+                    [ Attr.class "button button-primary"
+                    , Attr.disabled (model.submission == Submitting)
+                    , Events.onClick (PagesMsg.fromMsg CreateListing)
+                    ]
+                    [ Html.text
+                        (case model.submission of
+                            ReadyToSubmit ->
+                                "Add to the shelf"
+
+                            Submitting ->
+                                "Saving..."
+                        )
+                    ]
                 ]
             ]
         ]
 
 
-listingDialog : Listing -> Html.Html (PagesMsg Msg)
-listingDialog listing =
+listingDialog : Int -> Marketplace.PublishedListing -> Html.Html (PagesMsg Msg)
+listingDialog now published =
+    let
+        listing =
+            Marketplace.publishedListing published
+
+        daysRemaining =
+            max 1 ((Marketplace.listingExpiresAt published - now + 86400000 - 1) // 86400000)
+    in
     Html.div [ Attr.class "dialog-backdrop", Attr.attribute "role" "presentation" ]
         [ Html.section [ Attr.class "dialog detail-dialog", Attr.attribute "role" "dialog", Attr.attribute "aria-modal" "true", Attr.attribute "aria-labelledby" "detail-title" ]
             [ Html.div [ Attr.class ("detail-art " ++ Marketplace.listingArtClass listing) ]
@@ -693,9 +886,24 @@ listingDialog listing =
             , Html.h2 [ Attr.id "detail-title" ] [ Html.text (Marketplace.listingTitle listing) ]
             , Html.p [ Attr.class "listing-location" ] [ Html.text (Marketplace.neighborhoodName (Marketplace.listingNeighborhood listing) ++ " · shared by " ++ Marketplace.listingOwner listing) ]
             , Html.p [ Attr.class "detail-description" ] [ Html.text (Marketplace.listingDescription listing) ]
+            , Html.div [ Attr.class "contact-details" ]
+                [ Html.h3 [] [ Html.text "Contact the sharer directly" ]
+                , Html.p [ Attr.class "contact-value" ] [ Html.text (Marketplace.contactText (Marketplace.listingContact listing)) ]
+                ]
             , Html.div [ Attr.class "detail-footer" ]
                 [ Html.span [ Attr.class "detail-price" ] [ Html.text (Marketplace.priceLabel (Marketplace.listingPrice listing)) ]
-                , Html.button [ Attr.class "button button-primary", Events.onClick (PagesMsg.fromMsg ContactOwner) ] [ Html.text "Contact neighbor" ]
+                , Html.span [ Attr.class "expiry-note" ]
+                    [ Html.text
+                        ("Expires in "
+                            ++ String.fromInt daysRemaining
+                            ++ (if daysRemaining == 1 then
+                                    " day"
+
+                                else
+                                    " days"
+                               )
+                        )
+                    ]
                 ]
             ]
         ]

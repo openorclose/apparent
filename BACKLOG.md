@@ -7,15 +7,16 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 - [x] **P0** Create a working elm-pages application with documented setup, development, build, test, and formatting commands.
 - [x] **P0** Establish reusable page layout, navigation, and responsive marketplace styling.
 - [x] **P0** Add representative marketplace data and focused Elm domain tests.
-- [x] **P0** Document the page-session-only data lifecycle and prototype-only workflows.
+- [x] **P0** Document the data lifecycle, deployment limits, and prototype-only workflows.
 
 ## Marketplace
 
 - [x] **P1** Browse listings with search, category, neighborhood, price sorting, and pagination.
-- [ ] **P1** Create and edit a neighbor profile and durable free or paid listings.
+- [ ] **P1** Create and edit a neighbor profile and durable listings owned by authenticated neighbors.
 - [ ] **P1** Let listing owners manage availability and remove listings safely.
-- [x] **P1** Add in-page listing details and a page-session-only create listing flow.
-- [ ] **P1** Add real neighbor contact and messaging flows.
+- [x] **P1** Add in-page listing details and a server-backed create listing flow.
+- [x] **P1** Let a sharer provide free-form public contact information and have neighbors contact them directly outside the app.
+- [x] **P1** Persist each new listing to its own text file and permanently remove it after seven days.
 - [ ] **P1** Add dated borrowing requests with overlap checks, owner decisions, and renter cancellation.
 
 ## Trust and engagement
@@ -36,4 +37,4 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 - [ ] **P1** Add CI for Elm formatting, pure domain tests, and elm-pages production builds.
 - [ ] **P2** Add route-level interaction tests for marketplace filters and listing creation.
-- [ ] **P2** Add durable storage and server-side validation before making listings shared between visitors.
+- [ ] **P2** Replace the local file store with a durable shared database before deploying to ephemeral or multi-instance hosting.

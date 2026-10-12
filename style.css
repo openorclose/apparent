@@ -293,6 +293,7 @@ a { color: inherit; text-decoration: none; }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; gap: 14px; }
 .dialog h2 { font-size: 27px; letter-spacing: -1.2px; }
 .dialog-intro, .detail-description { margin: 13px 0 20px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.contact-privacy-note { margin: -10px 0 14px; color: #78867b; font-size: 10px; line-height: 1.55; }
 .close-button, .notice-close { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: #fff; color: #6d786f; cursor: pointer; font-size: 21px; line-height: 1; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-label { display: grid; gap: 7px; margin: 13px 0; color: #4e5b52; font-size: 11px; font-weight: 700; }
@@ -307,8 +308,12 @@ a { color: inherit; text-decoration: none; }
 .detail-dialog h2 { margin: 0; }
 .detail-dialog .listing-location { margin: 8px 0; }
 .detail-description { min-height: 45px; }
+.contact-details { margin: 20px 0; padding: 15px; border: 1px solid #e3e8df; border-radius: 7px; background: #f8faf6; }
+.contact-details h3 { margin: 0 0 8px; color: #4a5d4e; font-size: 11px; font-weight: 700; }
+.contact-value { margin: 0; color: #2f4034; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .detail-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 15px; border-top: 1px solid var(--line); }
 .detail-price { color: var(--green); font-size: 14px; font-weight: 700; }
+.expiry-note { color: var(--muted); font-size: 10px; }
 .notice { position: fixed; z-index: 12; right: 22px; bottom: 22px; display: flex; max-width: min(420px, calc(100vw - 32px)); align-items: center; gap: 15px; padding: 12px 12px 12px 17px; border: 1px solid #dce6dc; border-radius: 8px; background: #fff; box-shadow: 0 10px 35px rgba(37,51,45,.13); }
 .notice p { margin: 0; color: #46554a; font-size: 11px; line-height: 1.5; }
 .notice-close { width: 26px; height: 26px; font-size: 18px; }
