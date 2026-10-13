@@ -1,16 +1,21 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser
 import Html
 import Html.Attributes as Attr
 import Html.Events as Events
-import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Marketplace exposing (Listing)
 import String
 import Task
 import Time
+
+
+type alias Flags =
+    { apiBaseUrl : String
+    , configError : String
+    }
 
 
 type alias Model =
@@ -66,16 +71,25 @@ type Msg
     | ContactChanged String
     | DescriptionChanged String
     | CreateListing
-    | ListingCreated (Result Http.Error ())
-    | ListingsLoaded (Result Http.Error (List Marketplace.PublishedListing))
-    | OrdsConfigured (Result Http.Error String)
+    | OrdsResponse String
     | ClockUpdated Time.Posix
     | OpenListing String
     | CloseListing
     | DismissNotice
 
 
-main : Program () Model Msg
+type OrdsResponse
+    = ListingsResponse (Result String (List Marketplace.PublishedListing))
+    | ListingCreatedResponse (Result String ())
+
+
+port ordsRequest : Encode.Value -> Cmd msg
+
+
+port ordsResponse : (String -> msg) -> Sub msg
+
+
+main : Program Flags Model Msg
 main =
     Browser.element
         { init = init
@@ -85,8 +99,16 @@ main =
         }
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
+init : Flags -> ( Model, Cmd Msg )
+init flags =
+    let
+        apiBaseUrl =
+            if flags.apiBaseUrl == "" then
+                Nothing
+
+            else
+                Just flags.apiBaseUrl
+    in
     ( { query = ""
       , category = Nothing
       , neighborhood = Nothing
@@ -95,7 +117,7 @@ init _ =
       , now = 0
       , sampleListings = List.map (Marketplace.publishListing 0) Marketplace.sampleListings
       , serverListings = []
-      , apiBaseUrl = Nothing
+      , apiBaseUrl = apiBaseUrl
       , dialog = NoDialog
       , draft =
             { title = ""
@@ -106,14 +128,16 @@ init _ =
             , description = ""
             }
       , submission = ReadyToSubmit
-      , notice = Nothing
+      , notice =
+            if flags.configError == "" then
+                Nothing
+
+            else
+                Just flags.configError
       }
     , Cmd.batch
         [ Task.perform ClockUpdated Time.now
-        , Http.get
-            { url = "./ords-config.json"
-            , expect = Http.expectJson OrdsConfigured (Decode.field "apiBaseUrl" Decode.string)
-            }
+        , loadListings apiBaseUrl
         ]
     )
 
@@ -198,63 +222,40 @@ update msg model =
             else
                 submitListing model
 
-        ListingCreated result ->
-            case result of
-                Ok _ ->
-                    ( { model
-                        | dialog = NoDialog
-                        , draft = emptyDraft
-                        , submission = ReadyToSubmit
-                        , notice = Just "Your item is live for the next 7 days. Share your contact details and neighbors can reach you directly."
-                      }
-                    , loadListings model.apiBaseUrl
-                    )
+        OrdsResponse payload ->
+            case Decode.decodeString ordsResponseDecoder payload of
+                Err _ ->
+                    ( { model | notice = Just "Oracle REST returned an invalid response." }, Cmd.none )
 
-                Err error ->
-                    ( { model
-                        | submission = ReadyToSubmit
-                        , notice = Just ("Could not save your listing. " ++ httpErrorMessage error)
-                      }
-                    , Cmd.none
-                    )
+                Ok response ->
+                    case response of
+                        ListingsResponse (Ok listings) ->
+                            ( { model | serverListings = listings }, Cmd.none )
 
-        ListingsLoaded result ->
-            case result of
-                Ok listings ->
-                    ( { model | serverListings = listings }, Cmd.none )
+                        ListingsResponse (Err error) ->
+                            ( { model
+                                | notice = Just ("Could not load shared listings from Oracle REST Data Services. " ++ error)
+                              }
+                            , Cmd.none
+                            )
 
-                Err error ->
-                    ( { model
-                        | notice = Just ("Could not load shared listings from Oracle REST Data Services. " ++ httpErrorMessage error)
-                      }
-                    , Cmd.none
-                    )
+                        ListingCreatedResponse (Ok ()) ->
+                            ( { model
+                                | dialog = NoDialog
+                                , draft = emptyDraft
+                                , submission = ReadyToSubmit
+                                , notice = Just "Your item is live for the next 7 days. Share your contact details and neighbors can reach you directly."
+                              }
+                            , loadListings model.apiBaseUrl
+                            )
 
-        OrdsConfigured result ->
-            case result of
-                Ok apiBaseUrl ->
-                    let
-                        normalizedUrl =
-                            String.trim apiBaseUrl
-                    in
-                    if String.startsWith "https://" normalizedUrl && String.endsWith "/" normalizedUrl then
-                        ( { model | apiBaseUrl = Just normalizedUrl, notice = Nothing }
-                        , loadListings (Just normalizedUrl)
-                        )
-
-                    else
-                        ( { model
-                            | notice = Just "Set apiBaseUrl in ords-config.json to your HTTPS ORDS collection URL, including its trailing slash."
-                          }
-                        , Cmd.none
-                        )
-
-                Err error ->
-                    ( { model
-                        | notice = Just ("Could not load ords-config.json. " ++ httpErrorMessage error)
-                      }
-                    , Cmd.none
-                    )
+                        ListingCreatedResponse (Err error) ->
+                            ( { model
+                                | submission = ReadyToSubmit
+                                , notice = Just ("Could not save your listing. " ++ error)
+                              }
+                            , Cmd.none
+                            )
 
         ClockUpdated currentTime ->
             let
@@ -341,27 +342,24 @@ submitListing model =
 
                 Ok _ ->
                     ( { model | submission = Submitting, notice = Nothing }
-                    , Http.post
-                        { url = apiBaseUrl
-                        , body = Http.jsonBody (listingRequestEncoder model.draft)
-                        , expect = Http.expectWhatever ListingCreated
-                        }
+                    , ordsRequest
+                        (Encode.object
+                            [ ( "kind", Encode.string "createListing" )
+                            , ( "url", Encode.string apiBaseUrl )
+                            , ( "body", listingRequestEncoder model.draft price )
+                            ]
+                        )
                     )
 
 
-listingRequestEncoder : ListingDraft -> Encode.Value
-listingRequestEncoder draft =
+listingRequestEncoder : ListingDraft -> Marketplace.Price -> Encode.Value
+listingRequestEncoder draft price =
     Encode.object
         [ ( "title", Encode.string draft.title )
         , ( "category", Encode.string (Marketplace.categoryName draft.category) )
         , ( "neighborhood", Encode.string (Marketplace.neighborhoodName draft.neighborhood) )
         , ( "owner_name", Encode.string "A neighbor" )
-        , ( "price_cents"
-          , Marketplace.priceFromInput draft.price
-                |> Result.map Marketplace.priceInCents
-                |> Result.withDefault 0
-                |> Encode.int
-          )
+        , ( "price_cents", Encode.int (Marketplace.priceInCents price) )
         , ( "contact", Encode.string draft.contact )
         , ( "emoji", Encode.string "📦" )
         , ( "art_class", Encode.string "art-mint" )
@@ -385,12 +383,50 @@ loadListings maybeBaseUrl =
     maybeBaseUrl
         |> Maybe.map
             (\baseUrl ->
-                Http.get
-                    { url = baseUrl
-                    , expect = Http.expectJson ListingsLoaded ordsListingsDecoder
-                    }
+                ordsRequest
+                    (Encode.object
+                        [ ( "kind", Encode.string "loadListings" )
+                        , ( "url", Encode.string baseUrl )
+                        ]
+                    )
             )
         |> Maybe.withDefault Cmd.none
+
+
+ordsResponseDecoder : Decode.Decoder OrdsResponse
+ordsResponseDecoder =
+    Decode.field "kind" Decode.string
+        |> Decode.andThen
+            (\kind ->
+                case kind of
+                    "listings" ->
+                        Decode.field "ok" Decode.bool
+                            |> Decode.andThen
+                                (\ok ->
+                                    if ok then
+                                        Decode.map (ListingsResponse << Ok)
+                                            (Decode.field "body" ordsListingsDecoder)
+
+                                    else
+                                        Decode.map (ListingsResponse << Err)
+                                            (Decode.field "error" Decode.string)
+                                )
+
+                    "listingCreated" ->
+                        Decode.field "ok" Decode.bool
+                            |> Decode.andThen
+                                (\ok ->
+                                    if ok then
+                                        Decode.succeed (ListingCreatedResponse (Ok ()))
+
+                                    else
+                                        Decode.map (ListingCreatedResponse << Err)
+                                            (Decode.field "error" Decode.string)
+                                )
+
+                    _ ->
+                        Decode.fail "Unknown Oracle REST response."
+            )
 
 
 ordsListingsDecoder : Decode.Decoder (List Marketplace.PublishedListing)
@@ -401,28 +437,12 @@ ordsListingsDecoder =
         ]
 
 
-httpErrorMessage : Http.Error -> String
-httpErrorMessage error =
-    case error of
-        Http.BadUrl _ ->
-            "The server URL was invalid."
-
-        Http.Timeout ->
-            "The request timed out. Please try again."
-
-        Http.NetworkError ->
-            "The server could not be reached. Please try again."
-
-        Http.BadStatus status ->
-            "The server returned status " ++ String.fromInt status ++ "."
-
-        Http.BadBody _ ->
-            "The server returned an unreadable response."
-
-
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Time.every 30000 ClockUpdated
+    Sub.batch
+        [ Time.every 30000 ClockUpdated
+        , ordsResponse OrdsResponse
+        ]
 
 
 view : Model -> Html.Html Msg

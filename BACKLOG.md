@@ -4,7 +4,7 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 ## Foundation
 
-- [x] **P0** Create a standalone Elm browser app with documented setup, development, build, test, and formatting commands.
+- [x] **P0** Create a standalone Elm browser app with a static deployment that needs no npm or Node.js.
 - [x] **P0** Establish reusable page layout, navigation, and responsive marketplace styling.
 - [x] **P0** Add representative marketplace data and focused Elm domain tests.
 - [x] **P0** Document the ORDS API, data lifecycle, deployment limits, and prototype-only workflows.
@@ -17,6 +17,7 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 - [x] **P1** Add in-page listing details and a direct-to-ORDS create listing flow.
 - [x] **P1** Let a sharer provide free-form public contact information and have neighbors contact them directly outside the app.
 - [x] **P1** Persist listings through Oracle REST Data Services and permanently remove them after seven days.
+- [x] **P1** Use a single browser-native JavaScript port adapter for Oracle REST requests.
 - [ ] **P1** Add dated borrowing requests with overlap checks, owner decisions, and renter cancellation.
 
 ## Trust and engagement
@@ -35,6 +36,6 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 ## Engineering
 
-- [x] **P1** Add GitHub Pages CI for Elm formatting, pure domain tests, and static builds.
+- [x] **P1** Deploy the checked-in static frontend to GitHub Pages without a Node.js build.
 - [ ] **P2** Add route-level interaction tests for marketplace filters and listing creation.
 - [ ] **P2** Add ORDS authentication and abuse controls before enabling public multi-user write access.

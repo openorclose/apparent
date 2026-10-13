@@ -1,10 +1,11 @@
 # AppaRent Contribution Guide
 
-AppaRent is a static Elm marketplace frontend hosted on GitHub Pages and connected directly from browsers to Oracle Autonomous Database through Oracle REST Data Services (ORDS). There is no application server. Node.js/npm are development tooling only; application behavior belongs in Elm.
+AppaRent is a static Elm marketplace frontend hosted on GitHub Pages and connected directly from browsers to Oracle Autonomous Database through Oracle REST Data Services (ORDS). There is no application server, Node.js, or npm dependency.
 
 ## Architecture
 
-- Keep UI and HTTP behavior in the Elm `Browser.element` app at `app/Main.elm`.
+- Keep UI and domain behavior in the Elm `Browser.element` app at `app/Main.elm` and pure modules under `src/`.
+- Keep browser database transport in the single `public/app.js` file. It may only load the public ORDS URL and issue the GET/POST requests requested by Elm ports; do not add database credentials or domain/UI logic there.
 - Keep listing invariants, validation, JSON codecs, and expiry in pure Elm modules under `src/`.
 - Keep the REST contract and database-side validation/expiry in `sql/oracle-ords.sql`. The ORDS module exposes only the collection GET and create POST handlers.
 - Never put database credentials, access tokens, wallet data, or other secrets in browser code, static configuration, or Git. Static clients cannot keep secrets.
@@ -17,10 +18,11 @@ AppaRent is a static Elm marketplace frontend hosted on GitHub Pages and connect
 - Prefer custom types, smart constructors, and small Elm modules over stringly typed state.
 - Add/update Elm tests for domain behavior and the ORDS JSON contract.
 - Format Elm files with `elm-format`; keep JSON, SQL, YAML, and Markdown consistent with existing styles.
-- Run `npm test`, `npm run format:check`, and `npm run build` before completing coherent changes.
+- Compile with the standalone Elm compiler (`elm make app/Main.elm --output=public/elm.js --optimize`) and update the checked-in `public/elm.js` whenever Elm sources change.
+- Verify the static app and JavaScript adapter with a local static file server; GitHub Pages deploys the checked-in `public/` files without a Node/npm build.
 - Update `BACKLOG.md` and `README.md` when capabilities, deployment, or database setup change.
 - Inspect the staged diff before committing. Commit only project files related to the task.
-- Do not commit generated `public/elm.js`, `elm-stuff`, `dist`, credentials, or real personal data.
+- Do not commit `elm-stuff`, `dist`, credentials, or real personal data.
 
 ## Scope and safety
 
