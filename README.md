@@ -26,11 +26,11 @@ elm make app/Main.elm --output=public/elm.js --optimize
 
    ```sql
    CREATE USER APPARENT_OWNER IDENTIFIED BY "<strong unique password>";
-   GRANT CREATE SESSION, CREATE TABLE, CREATE TRIGGER, CREATE JOB TO APPARENT_OWNER;
+   GRANT CREATE SESSION, CREATE TABLE, CREATE TRIGGER, CREATE PROCEDURE, CREATE JOB TO APPARENT_OWNER;
    ALTER USER APPARENT_OWNER QUOTA 50M ON DATA;
    ```
 
-2. Connect the SQL worksheet as `APPARENT_OWNER` and run [`sql/oracle-ords.sql`](sql/oracle-ords.sql). It creates a constrained listing table, server-generated IDs and seven-day expiries, an expiry index and cleanup job, and an ORDS module with only a public `GET /listings/` and validated `POST /listings/`. The ORDS GET response is its standard collection-feed JSON (`items` array); Elm decodes those rows. The script is a one-time installation, not an idempotent migration.
+2. Connect the SQL worksheet as `APPARENT_OWNER` and run [`sql/oracle-ords.sql`](sql/oracle-ords.sql). It creates a constrained listing table, server-generated IDs and seven-day expiries, an expiry index and cleanup job, a database-enforced create limit, and an ORDS module with only a public `GET /listings/` and validated `POST /listings/`. The ORDS GET response is its standard collection-feed JSON (`items` array); Elm decodes those rows. This is a one-time installation, not an idempotent migration. If the existing schema and ORDS module are already installed, first grant the owner `CREATE PROCEDURE` as `ADMIN` (`GRANT CREATE PROCEDURE TO APPARENT_OWNER;`), then run [`sql/oracle-rate-limit.sql`](sql/oracle-rate-limit.sql) once instead; do not rerun the full installation script.
 3. Allow cross-origin browser calls for the exact frontend origins. In the SQL worksheet as `APPARENT_OWNER`, run this after replacing the example origins with your actual GitHub Pages origin and local development origin:
 
    ```sql
@@ -54,7 +54,7 @@ elm make app/Main.elm --output=public/elm.js --optimize
    Edit `apiBaseUrl` in [`public/ords-config.json`](public/ords-config.json) to that full URL, including the trailing slash. This value is public configuration, not a credential. Never place database usernames, passwords, wallet contents, or API secrets in this file or any Elm/browser code.
 5. Test the GET endpoint in a browser or with `curl`; verify its response contains an `items` array with listing fields such as `listing_id`, `price_cents`, and `expires_at_ms`. Then preview the static app and test creating a demo listing.
 
-The database API intentionally permits unauthenticated listing reads and submissions so a purely static browser client can use it without a secret. Oracle validates field lengths, finite categories/neighborhoods, and prices in the ORDS POST handler and table constraints. However, anyone can call a public endpoint outside a browser: CORS does not prevent bots or direct API clients from creating records. This is a prototype, not a production public write API; add authentication and abuse/rate controls before inviting unrestricted use.
+The database API intentionally permits unauthenticated listing reads and submissions so a purely static browser client can use it without a secret. Oracle validates field lengths, finite categories/neighborhoods, and prices in the ORDS POST handler and table constraints. The POST handler also atomically allows at most five creation attempts per source address per one-hour window, hashes the address before storing the bucket, and returns HTTP 429 after the limit. Missing source-address information fails closed; the hourly cleanup job removes expired rate-limit buckets. Clients sharing one public IP (for example, a household or carrier NAT) share that quota. Verify that ORDS `REMOTE_ADDR` is the actual caller address in your deployment; if it identifies a shared proxy instead, this database limit will also be shared. Do not replace it with an arbitrary `X-Forwarded-For` header, which callers can spoof unless a trusted proxy sanitizes it. The limit covers listing creation, not public GET traffic, and is a baseline abuse control rather than a substitute for an upstream WAF/API gateway and monitoring. No account or authentication is introduced.
 
 ## Publish on GitHub Pages
 
@@ -67,7 +67,7 @@ No OCI Compute VM or long-running Node server is needed. The browser connects to
 - `app/Main.elm` is a `Browser.element` Elm application. It owns the UI state and uses ports to request ORDS operations.
 - `public/app.js` is the only hand-written JavaScript file. It uses the browser's native `fetch` API for public ORDS GET/POST requests and passes results to Elm over ports.
 - `src/Marketplace.elm` contains pure domain types, smart constructors, validation, expiry, and JSON decoding. Contact details are public plain text.
-- `sql/oracle-ords.sql` defines the database table, constraints, expiry cleanup, and GET/POST ORDS module.
+- `sql/oracle-ords.sql` defines the database tables, constraints, expiry and rate-limit cleanup, per-source creation quota, and GET/POST ORDS module.
 - `public/ords-config.json` contains only the ORDS collection URL; CI generates the ignored `public/elm.js` bundle during the Pages build.
 - GitHub Pages serves static files only. Database credentials and authorization cannot be kept secret in client-side Elm or JavaScript.
 

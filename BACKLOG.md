@@ -38,4 +38,5 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 - [x] **P1** Compile Elm with the standalone compiler and deploy the static frontend to GitHub Pages without Node.js/npm.
 - [ ] **P2** Add route-level interaction tests for marketplace filters and listing creation.
-- [ ] **P2** Add ORDS authentication and abuse controls before enabling public multi-user write access.
+- [ ] **P2** Add upstream abuse controls and monitoring before enabling unrestricted public multi-user access.
+- [x] **P1** Rate-limit unauthenticated listing creation in Oracle by source address.
