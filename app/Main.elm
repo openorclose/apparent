@@ -25,7 +25,6 @@ type alias Model =
     , sortOrder : Marketplace.SortOrder
     , page : Int
     , now : Int
-    , sampleListings : List Marketplace.PublishedListing
     , serverListings : List Marketplace.PublishedListing
     , apiBaseUrl : Maybe String
     , dialog : Dialog
@@ -115,14 +114,13 @@ init flags =
       , sortOrder = Marketplace.Recommended
       , page = 1
       , now = 0
-      , sampleListings = List.map (Marketplace.publishListing 0) Marketplace.sampleListings
       , serverListings = []
       , apiBaseUrl = apiBaseUrl
       , dialog = NoDialog
       , draft =
             { title = ""
             , category = Marketplace.Tools
-            , neighborhood = Marketplace.Maplewood
+            , neighborhood = Marketplace.AngMoKio
             , price = "0"
             , contact = ""
             , description = ""
@@ -262,20 +260,13 @@ update msg model =
                 now =
                     Time.posixToMillis currentTime
 
-                samples =
-                    if model.now == 0 then
-                        List.map (Marketplace.publishListing now) Marketplace.sampleListings
-
-                    else
-                        Marketplace.expireListings now model.sampleListings
-
                 serverListings =
                     Marketplace.expireListings now model.serverListings
 
                 listingStillExists listingId =
                     List.any
                         (\published -> Marketplace.listingId (Marketplace.publishedListing published) == listingId)
-                        (samples ++ serverListings)
+                        serverListings
 
                 dialog =
                     case model.dialog of
@@ -291,7 +282,6 @@ update msg model =
             in
             ( { model
                 | now = now
-                , sampleListings = samples
                 , serverListings = serverListings
                 , dialog = dialog
               }
@@ -371,7 +361,7 @@ emptyDraft : ListingDraft
 emptyDraft =
     { title = ""
     , category = Marketplace.Tools
-    , neighborhood = Marketplace.Maplewood
+    , neighborhood = Marketplace.AngMoKio
     , price = "0"
     , contact = ""
     , description = ""
@@ -449,10 +439,10 @@ view : Model -> Html.Html Msg
 view model =
     let
         allListings =
-            List.map Marketplace.publishedListing (Marketplace.expireListings model.now (model.sampleListings ++ model.serverListings))
+            List.map Marketplace.publishedListing (Marketplace.expireListings model.now model.serverListings)
 
         activePublishedListings =
-            Marketplace.expireListings model.now (model.sampleListings ++ model.serverListings)
+            Marketplace.expireListings model.now model.serverListings
 
         filteredListings =
             Marketplace.filterListings
@@ -561,21 +551,11 @@ hero model =
                 , Html.a [ Attr.href "#discover", Attr.class "text-link" ] [ Html.text "Explore the neighborhood ↓" ]
                 ]
             , Html.div [ Attr.class "hero-proof" ]
-                [ Html.div [ Attr.class "avatar-stack", Attr.attribute "aria-hidden" "true" ]
-                    [ Html.span [ Attr.class "avatar avatar-one" ] [ Html.text "M" ]
-                    , Html.span [ Attr.class "avatar avatar-two" ] [ Html.text "J" ]
-                    , Html.span [ Attr.class "avatar avatar-three" ] [ Html.text "P" ]
-                    ]
-                , Html.p [] [ Html.strong [] [ Html.text "Neighbors helping neighbors" ], Html.br [] [], Html.text "One useful thing at a time" ]
+                [ Html.p [] [ Html.strong [] [ Html.text "Neighbors helping neighbors" ], Html.br [] [], Html.text "One useful thing at a time" ]
                 ]
             ]
         , Html.div [ Attr.class "hero-art", Attr.attribute "aria-hidden" "true" ]
             [ Html.div [ Attr.class "sun-shape" ] []
-            , Html.div [ Attr.class "hero-card hero-card-main" ]
-                [ Html.div [ Attr.class "hero-card-art art-sand" ] [ Html.text "🛠️" ]
-                , Html.p [] [ Html.text "Cordless drill set" ]
-                , Html.span [] [ Html.text "Shared with care" ]
-                ]
             , Html.div [ Attr.class "hero-card hero-card-note" ]
                 [ Html.span [] [ Html.text "✳" ]
                 , Html.p [] [ Html.text "Borrow local.\nFeel good." ]
@@ -595,13 +575,13 @@ browseSection model listings resultCount pageTotal =
                 , Html.p [ Attr.class "section-subtitle" ] [ Html.text "Useful things, shared by people nearby." ]
                 ]
             , Html.label [ Attr.class "neighborhood-filter" ]
-                [ Html.span [] [ Html.text "Around" ]
+                [ Html.span [] [ Html.text "Town" ]
                 , Html.select
                     [ Attr.value (Maybe.map Marketplace.neighborhoodName model.neighborhood |> Maybe.withDefault "")
                     , Events.onInput NeighborhoodSelected
-                    , Attr.attribute "aria-label" "Filter by neighborhood"
+                    , Attr.attribute "aria-label" "Filter by town"
                     ]
-                    (Html.option [ Attr.value "" ] [ Html.text "All neighborhoods" ]
+                    (Html.option [ Attr.value "" ] [ Html.text "All towns" ]
                         :: List.map
                             (\neighborhood ->
                                 Html.option
@@ -617,7 +597,7 @@ browseSection model listings resultCount pageTotal =
                 [ Html.span [ Attr.attribute "aria-hidden" "true" ] [ Html.text "⌕" ]
                 , Html.input
                     [ Attr.type_ "search"
-                    , Attr.placeholder "Search for a drill, tent, mixer..."
+                    , Attr.placeholder "Search real listings by item or town..."
                     , Attr.value model.query
                     , Events.onInput SearchChanged
                     , Attr.attribute "aria-label" "Search items and neighbors"
@@ -794,7 +774,7 @@ createDialog model =
                 [ Html.text "Item name"
                 , Html.input
                     [ Attr.value model.draft.title
-                    , Attr.placeholder "e.g. Cordless drill set"
+                    , Attr.placeholder "Name the item you're sharing"
                     , Attr.maxlength 120
                     , Events.onInput TitleChanged
                     ]
@@ -817,7 +797,7 @@ createDialog model =
                         )
                     ]
                 , Html.label [ Attr.class "field-label" ]
-                    [ Html.text "Neighborhood"
+                    [ Html.text "Town"
                     , Html.select
                         [ Attr.value (Marketplace.neighborhoodName model.draft.neighborhood)
                         , Events.onInput NeighborhoodDraftChanged

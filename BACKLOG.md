@@ -6,7 +6,7 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 - [x] **P0** Create a standalone Elm browser app with a static deployment that needs no npm or Node.js.
 - [x] **P0** Establish reusable page layout, navigation, and responsive marketplace styling.
-- [x] **P0** Add representative marketplace data and focused Elm domain tests.
+- [x] **P0** Add focused Elm domain tests.
 - [x] **P0** Document the ORDS API, data lifecycle, deployment limits, and prototype-only workflows.
 
 ## Marketplace
@@ -18,6 +18,7 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 - [x] **P1** Let a sharer provide free-form public contact information and have neighbors contact them directly outside the app.
 - [x] **P1** Persist listings through Oracle REST Data Services and permanently remove them after seven days.
 - [x] **P1** Use a single browser-native JavaScript port adapter for Oracle REST requests.
+- [x] **P1** Display only database-backed listings and use real Singapore town choices.
 - [ ] **P1** Add dated borrowing requests with overlap checks, owner decisions, and renter cancellation.
 
 ## Trust and engagement

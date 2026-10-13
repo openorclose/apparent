@@ -40,7 +40,6 @@ module Marketplace exposing
     , publishedListing
     , publishedListingDecoder
     , publishedListingEncoder
-    , sampleListings
     , sortByPrice
     , weekInMilliseconds
     )
@@ -61,9 +60,30 @@ type Category
 
 
 type Neighborhood
-    = Maplewood
-    | Riverside
-    | OakHill
+    = AngMoKio
+    | Bedok
+    | Bishan
+    | BukitBatok
+    | BukitMerah
+    | BukitPanjang
+    | ChoaChuKang
+    | Clementi
+    | Geylang
+    | Hougang
+    | JurongEast
+    | JurongWest
+    | KallangWhampoa
+    | MarineParade
+    | PasirRis
+    | Punggol
+    | Queenstown
+    | Sembawang
+    | Sengkang
+    | Serangoon
+    | Tampines
+    | ToaPayoh
+    | Woodlands
+    | Yishun
 
 
 type Price
@@ -184,20 +204,107 @@ categoryFromName name =
 
 neighborhoods : List Neighborhood
 neighborhoods =
-    [ Maplewood, Riverside, OakHill ]
+    [ AngMoKio
+    , Bedok
+    , Bishan
+    , BukitBatok
+    , BukitMerah
+    , BukitPanjang
+    , ChoaChuKang
+    , Clementi
+    , Geylang
+    , Hougang
+    , JurongEast
+    , JurongWest
+    , KallangWhampoa
+    , MarineParade
+    , PasirRis
+    , Punggol
+    , Queenstown
+    , Sembawang
+    , Sengkang
+    , Serangoon
+    , Tampines
+    , ToaPayoh
+    , Woodlands
+    , Yishun
+    ]
 
 
 neighborhoodName : Neighborhood -> String
 neighborhoodName neighborhood =
     case neighborhood of
-        Maplewood ->
-            "Maplewood"
+        AngMoKio ->
+            "Ang Mo Kio"
 
-        Riverside ->
-            "Riverside"
+        Bedok ->
+            "Bedok"
 
-        OakHill ->
-            "Oak Hill"
+        Bishan ->
+            "Bishan"
+
+        BukitBatok ->
+            "Bukit Batok"
+
+        BukitMerah ->
+            "Bukit Merah"
+
+        BukitPanjang ->
+            "Bukit Panjang"
+
+        ChoaChuKang ->
+            "Choa Chu Kang"
+
+        Clementi ->
+            "Clementi"
+
+        Geylang ->
+            "Geylang"
+
+        Hougang ->
+            "Hougang"
+
+        JurongEast ->
+            "Jurong East"
+
+        JurongWest ->
+            "Jurong West"
+
+        KallangWhampoa ->
+            "Kallang/Whampoa"
+
+        MarineParade ->
+            "Marine Parade"
+
+        PasirRis ->
+            "Pasir Ris"
+
+        Punggol ->
+            "Punggol"
+
+        Queenstown ->
+            "Queenstown"
+
+        Sembawang ->
+            "Sembawang"
+
+        Sengkang ->
+            "Sengkang"
+
+        Serangoon ->
+            "Serangoon"
+
+        Tampines ->
+            "Tampines"
+
+        ToaPayoh ->
+            "Toa Payoh"
+
+        Woodlands ->
+            "Woodlands"
+
+        Yishun ->
+            "Yishun"
 
 
 neighborhoodFromName : String -> Maybe Neighborhood
@@ -479,20 +586,6 @@ paginate page size items =
             |> List.take size
 
 
-sampleListings : List Listing
-sampleListings =
-    [ makeSampleListing "cordless-drill" "Cordless drill set" Tools Maplewood "Maya" Free "maya@example.test" "🛠️" "art-sand" "A handy 18V drill with two batteries and a full set of bits. Great for shelves, furniture, and weekend projects."
-    , makeSampleListing "camping-tent" "Two-person camping tent" Outdoors Riverside "Jordan" (DailyPrice 1200) "jordan@example.test" "⛺" "art-green" "Lightweight, waterproof tent with a footprint and rain fly. Packs down small and is ready for your next trip."
-    , makeSampleListing "standing-mixer" "Stand mixer" Home OakHill "Priya" (DailyPrice 800) "priya@example.test" "🥣" "art-pink" "A reliable mixer with whisk, paddle, and dough hook attachments. Happy to share recipe tips too."
-    , makeSampleListing "projector" "Portable projector" Electronics Maplewood "Alex" (DailyPrice 1500) "alex@example.test" "📽️" "art-blue" "1080p portable projector with HDMI cable. Makes backyard movie nights easy."
-    , makeSampleListing "basketball" "Outdoor basketball" Sports Riverside "Sam" Free "sam@example.test" "🏀" "art-orange" "A well-loved size 7 basketball. Borrow it for the afternoon and bring it back with a little air."
-    , makeSampleListing "pressure-washer" "Electric pressure washer" Tools OakHill "Lee" (DailyPrice 2000) "lee@example.test" "🚿" "art-lilac" "Compact pressure washer with several spray tips. Perfect for patios, bikes, and garden furniture."
-    , makeSampleListing "picnic-basket" "Picnic basket for four" Outdoors Maplewood "Nina" (DailyPrice 500) "nina@example.test" "🧺" "art-yellow" "A roomy woven basket with reusable plates, cups, and cutlery for four people."
-    , makeSampleListing "sewing-machine" "Beginner sewing machine" Home Riverside "Chris" (DailyPrice 1000) "chris@example.test" "🧵" "art-mint" "Easy-to-use sewing machine with a few thread colors and a simple instruction booklet."
-    , makeSampleListing "bike-pump" "Floor bike pump" Sports OakHill "Taylor" Free "taylor@example.test" "🚲" "art-blue" "A sturdy floor pump with a pressure gauge and adapters for common bike valves."
-    ]
-
-
 publishListing : Int -> Listing -> PublishedListing
 publishListing createdAt listing =
     PublishedListing listing (createdAt + weekInMilliseconds)
@@ -577,7 +670,12 @@ publishedListingDecoder =
             (wireField "id" "listing_id" Decode.string)
             (Decode.field "title" Decode.string)
             (Decode.field "category" Decode.string)
-            (Decode.field "neighborhood" Decode.string)
+            (Decode.oneOf
+                [ Decode.field "town" Decode.string
+                , Decode.field "neighborhood" Decode.string
+                , Decode.field "NEIGHBORHOOD" Decode.string
+                ]
+            )
             (wireField "owner" "owner_name" Decode.string)
             (wireField "priceCents" "price_cents" Decode.int)
             (Decode.field "contact" Decode.string)
@@ -625,19 +723,3 @@ priceInCents price =
 
         DailyPrice cents ->
             cents
-
-
-makeSampleListing : String -> String -> Category -> Neighborhood -> String -> Price -> String -> String -> String -> String -> Listing
-makeSampleListing id title category neighborhood owner price contact emoji artClass description =
-    Listing
-        { id = id
-        , title = NonEmptyTitle title
-        , category = category
-        , neighborhood = neighborhood
-        , owner = owner
-        , price = price
-        , contact = ContactInfo contact
-        , emoji = emoji
-        , artClass = artClass
-        , description = description
-        }

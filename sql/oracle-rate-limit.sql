@@ -112,7 +112,7 @@ BEGIN
                         RAISE_APPLICATION_ERROR(-20001, 'Title must contain 1 to 120 characters.');
                     ELSIF l_category NOT IN ('Tools', 'Outdoors', 'Home', 'Electronics', 'Sports') THEN
                         RAISE_APPLICATION_ERROR(-20002, 'Invalid category.');
-                    ELSIF l_neighborhood NOT IN ('Maplewood', 'Riverside', 'Oak Hill') THEN
+                    ELSIF l_neighborhood NOT IN ('Ang Mo Kio', 'Bedok', 'Bishan', 'Bukit Batok', 'Bukit Merah', 'Bukit Panjang', 'Choa Chu Kang', 'Clementi', 'Geylang', 'Hougang', 'Jurong East', 'Jurong West', 'Kallang/Whampoa', 'Marine Parade', 'Pasir Ris', 'Punggol', 'Queenstown', 'Sembawang', 'Sengkang', 'Serangoon', 'Tampines', 'Toa Payoh', 'Woodlands', 'Yishun') THEN
                         RAISE_APPLICATION_ERROR(-20003, 'Invalid neighborhood.');
                     ELSIF l_price_cents < 0 OR l_price_cents > 10000000 THEN
                         RAISE_APPLICATION_ERROR(-20004, 'Price is outside the allowed range.');

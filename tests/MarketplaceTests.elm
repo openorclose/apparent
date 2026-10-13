@@ -13,24 +13,30 @@ tests =
         [ describe "filterListings"
             [ test "search is case-insensitive and includes neighborhood names" <|
                 \_ ->
-                    Marketplace.filterListings
-                        { query = "MAPLEWOOD"
-                        , category = Nothing
-                        , neighborhood = Nothing
-                        }
-                        Marketplace.sampleListings
-                        |> List.map Marketplace.listingId
-                        |> Expect.equal [ "cordless-drill", "projector", "picnic-basket" ]
+                    expectFixtures
+                        (\listings ->
+                            Marketplace.filterListings
+                                { query = "ANG MO KIO"
+                                , category = Nothing
+                                , neighborhood = Nothing
+                                }
+                                listings
+                                |> List.map Marketplace.listingId
+                                |> Expect.equal [ "ang-mo-kio-drill", "ang-mo-kio-projector", "ang-mo-kio-basket" ]
+                        )
             , test "category and neighborhood filters combine" <|
                 \_ ->
-                    Marketplace.filterListings
-                        { query = ""
-                        , category = Just Marketplace.Outdoors
-                        , neighborhood = Just Marketplace.Riverside
-                        }
-                        Marketplace.sampleListings
-                        |> List.map Marketplace.listingId
-                        |> Expect.equal [ "camping-tent" ]
+                    expectFixtures
+                        (\listings ->
+                            Marketplace.filterListings
+                                { query = ""
+                                , category = Just Marketplace.Outdoors
+                                , neighborhood = Just Marketplace.Punggol
+                                }
+                                listings
+                                |> List.map Marketplace.listingId
+                                |> Expect.equal [ "punggol-tent" ]
+                        )
             , test "an unknown category cannot be parsed into the domain type" <|
                 \_ ->
                     Marketplace.categoryFromName "Garden"
@@ -39,6 +45,42 @@ tests =
                 \_ ->
                     Marketplace.neighborhoodFromName "Somewhere"
                         |> Expect.equal Nothing
+            , test "town choices are real Singapore towns and exclude old fictional options" <|
+                \_ ->
+                    ( List.map Marketplace.neighborhoodName Marketplace.neighborhoods
+                    , [ Marketplace.neighborhoodFromName "Maplewood"
+                      , Marketplace.neighborhoodFromName "Riverside"
+                      , Marketplace.neighborhoodFromName "Oak Hill"
+                      ]
+                    )
+                        |> Expect.equal
+                            ( [ "Ang Mo Kio"
+                              , "Bedok"
+                              , "Bishan"
+                              , "Bukit Batok"
+                              , "Bukit Merah"
+                              , "Bukit Panjang"
+                              , "Choa Chu Kang"
+                              , "Clementi"
+                              , "Geylang"
+                              , "Hougang"
+                              , "Jurong East"
+                              , "Jurong West"
+                              , "Kallang/Whampoa"
+                              , "Marine Parade"
+                              , "Pasir Ris"
+                              , "Punggol"
+                              , "Queenstown"
+                              , "Sembawang"
+                              , "Sengkang"
+                              , "Serangoon"
+                              , "Tampines"
+                              , "Toa Payoh"
+                              , "Woodlands"
+                              , "Yishun"
+                              ]
+                            , [ Nothing, Nothing, Nothing ]
+                            )
             ]
         , describe "priceFromInput"
             [ test "parses free, whole-dollar, and fractional prices" <|
@@ -67,10 +109,13 @@ tests =
         , describe "sorting and pagination"
             [ test "sorts free items before paid items" <|
                 \_ ->
-                    Marketplace.sortByPrice Marketplace.sampleListings
-                        |> List.take 3
-                        |> List.map (Marketplace.listingPrice >> Marketplace.priceLabel)
-                        |> Expect.equal [ "Free", "Free", "Free" ]
+                    expectFixtures
+                        (\listings ->
+                            Marketplace.sortByPrice listings
+                                |> List.take 3
+                                |> List.map (Marketplace.listingPrice >> Marketplace.priceLabel)
+                                |> Expect.equal [ "Free", "Free", "$5 / day" ]
+                        )
             , test "calculates at least one page for empty results" <|
                 \_ ->
                     Marketplace.pageCount 6 0
@@ -87,7 +132,7 @@ tests =
                         { id = " test-item "
                         , title = title
                         , category = Marketplace.Tools
-                        , neighborhood = Marketplace.Maplewood
+                        , neighborhood = Marketplace.AngMoKio
                         , owner = " Test neighbor "
                         , price = Marketplace.freePrice
                         , contact = " maya@example.test "
@@ -123,7 +168,7 @@ tests =
                         { id = "test-item"
                         , title = "A valid item"
                         , category = Marketplace.Tools
-                        , neighborhood = Marketplace.Maplewood
+                        , neighborhood = Marketplace.AngMoKio
                         , owner = "Test neighbor"
                         , price = Marketplace.freePrice
                         , contact = "neighbor@example.test"
@@ -146,7 +191,7 @@ tests =
                         { id = "test-item"
                         , title = "A valid item"
                         , category = Marketplace.Tools
-                        , neighborhood = Marketplace.Maplewood
+                        , neighborhood = Marketplace.AngMoKio
                         , owner = "Test neighbor"
                         , price = Marketplace.freePrice
                         , contact = " "
@@ -160,20 +205,23 @@ tests =
         , describe "seven-day expiry and persistence format"
             [ test "listings remain available until exactly seven days have elapsed" <|
                 \_ ->
-                    Marketplace.sampleListings
-                        |> List.take 1
-                        |> List.map
-                            (\listing ->
-                                let
-                                    published =
-                                        Marketplace.publishListing 1000 listing
-                                in
-                                ( List.length (Marketplace.expireListings (1000 + Marketplace.weekInMilliseconds - 1) [ published ])
-                                , List.length (Marketplace.expireListings (1000 + Marketplace.weekInMilliseconds) [ published ])
-                                , Marketplace.listingExpiresAt published
-                                )
-                            )
-                        |> Expect.equal [ ( 1, 0, 1000 + Marketplace.weekInMilliseconds ) ]
+                    expectFixtures
+                        (\listings ->
+                            case List.head listings of
+                                Just listing ->
+                                    let
+                                        published =
+                                            Marketplace.publishListing 1000 listing
+                                    in
+                                    ( List.length (Marketplace.expireListings (1000 + Marketplace.weekInMilliseconds - 1) [ published ])
+                                    , List.length (Marketplace.expireListings (1000 + Marketplace.weekInMilliseconds) [ published ])
+                                    , Marketplace.listingExpiresAt published
+                                    )
+                                        |> Expect.equal ( 1, 0, 1000 + Marketplace.weekInMilliseconds )
+
+                                Nothing ->
+                                    Expect.fail "Test fixture listing was not created."
+                        )
             , test "JSON storage round-trips each listing's contact and expiry" <|
                 \_ ->
                     let
@@ -198,24 +246,26 @@ tests =
                                     )
                                 |> Result.mapError Decode.errorToString
                     in
-                    Marketplace.sampleListings
-                        |> List.map roundTrip
-                        |> Expect.equal
-                            (List.map
-                                (\listing ->
-                                    Ok
-                                        ( Marketplace.listingId listing
-                                        , Marketplace.contactText (Marketplace.listingContact listing)
-                                        , 1000 + Marketplace.weekInMilliseconds
+                    expectFixtures
+                        (\listings ->
+                            List.map roundTrip listings
+                                |> Expect.equal
+                                    (List.map
+                                        (\listing ->
+                                            Ok
+                                                ( Marketplace.listingId listing
+                                                , Marketplace.contactText (Marketplace.listingContact listing)
+                                                , 1000 + Marketplace.weekInMilliseconds
+                                                )
                                         )
-                                )
-                                Marketplace.sampleListings
-                            )
+                                        listings
+                                    )
+                        )
             , test "decodes rows returned by the ORDS collection endpoint" <|
                 \_ ->
                     Decode.decodeString
                         (Decode.field "items" (Decode.list Marketplace.publishedListingDecoder))
-                        """{"items":[{"listing_id":"a1b2c3","title":"Hand saw","category":"Tools","neighborhood":"Maplewood","owner_name":"A neighbor","price_cents":250,"contact":"Signal: @neighbor","emoji":"🪚","art_class":"art-mint","description":"Sharp and ready","expires_at_ms":1792000000000}],"hasMore":false}"""
+                        """{"items":[{"listing_id":"a1b2c3","title":"Hand saw","category":"Tools","neighborhood":"Bedok","owner_name":"A neighbor","price_cents":250,"contact":"Signal: @neighbor","emoji":"🪚","art_class":"art-mint","description":"Sharp and ready","expires_at_ms":1792000000000}],"hasMore":false}"""
                         |> Result.map
                             (List.map
                                 (\published ->
@@ -243,3 +293,85 @@ tests =
                             )
             ]
         ]
+
+
+expectFixtures : (List Marketplace.Listing -> Expect.Expectation) -> Expect.Expectation
+expectFixtures assertion =
+    case fixtureListings of
+        Ok listings ->
+            assertion listings
+
+        Err error ->
+            Expect.fail error
+
+
+fixtureListings : Result String (List Marketplace.Listing)
+fixtureListings =
+    Result.map3
+        (\projectorPrice basketPrice tentPrice ->
+            [ { id = "ang-mo-kio-drill"
+              , title = "Cordless drill"
+              , category = Marketplace.Tools
+              , neighborhood = Marketplace.AngMoKio
+              , owner = "Maya"
+              , price = Marketplace.freePrice
+              , contact = "maya@example.test"
+              , emoji = "🛠️"
+              , artClass = "art-sand"
+              , description = "Test listing."
+              }
+            , { id = "ang-mo-kio-projector"
+              , title = "Portable projector"
+              , category = Marketplace.Electronics
+              , neighborhood = Marketplace.AngMoKio
+              , owner = "Alex"
+              , price = projectorPrice
+              , contact = "alex@example.test"
+              , emoji = "📽️"
+              , artClass = "art-blue"
+              , description = "Test listing."
+              }
+            , { id = "ang-mo-kio-basket"
+              , title = "Picnic basket"
+              , category = Marketplace.Outdoors
+              , neighborhood = Marketplace.AngMoKio
+              , owner = "Nina"
+              , price = basketPrice
+              , contact = "nina@example.test"
+              , emoji = "🧺"
+              , artClass = "art-yellow"
+              , description = "Test listing."
+              }
+            , { id = "punggol-tent"
+              , title = "Camping tent"
+              , category = Marketplace.Outdoors
+              , neighborhood = Marketplace.Punggol
+              , owner = "Jordan"
+              , price = tentPrice
+              , contact = "jordan@example.test"
+              , emoji = "⛺"
+              , artClass = "art-green"
+              , description = "Test listing."
+              }
+            , { id = "bedok-basketball"
+              , title = "Basketball"
+              , category = Marketplace.Sports
+              , neighborhood = Marketplace.Bedok
+              , owner = "Sam"
+              , price = Marketplace.freePrice
+              , contact = "sam@example.test"
+              , emoji = "🏀"
+              , artClass = "art-orange"
+              , description = "Test listing."
+              }
+            ]
+        )
+        (Marketplace.priceFromCents 1500)
+        (Marketplace.priceFromCents 500)
+        (Marketplace.priceFromCents 1200)
+        |> Result.andThen
+            (\inputs ->
+                inputs
+                    |> List.map Marketplace.createListing
+                    |> List.foldr (Result.map2 (::)) (Ok [])
+            )
