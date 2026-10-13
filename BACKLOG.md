@@ -36,6 +36,6 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 ## Engineering
 
-- [x] **P1** Deploy the checked-in static frontend to GitHub Pages without a Node.js build.
+- [x] **P1** Compile Elm with the standalone compiler and deploy the static frontend to GitHub Pages without Node.js/npm.
 - [ ] **P2** Add route-level interaction tests for marketplace filters and listing creation.
 - [ ] **P2** Add ORDS authentication and abuse controls before enabling public multi-user write access.

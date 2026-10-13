@@ -18,11 +18,12 @@ AppaRent is a static Elm marketplace frontend hosted on GitHub Pages and connect
 - Prefer custom types, smart constructors, and small Elm modules over stringly typed state.
 - Add/update Elm tests for domain behavior and the ORDS JSON contract.
 - Format Elm files with `elm-format`; keep JSON, SQL, YAML, and Markdown consistent with existing styles.
-- Compile with the standalone Elm compiler (`elm make app/Main.elm --output=public/elm.js --optimize`) and update the checked-in `public/elm.js` whenever Elm sources change.
-- Verify the static app and JavaScript adapter with a local static file server; GitHub Pages deploys the checked-in `public/` files without a Node/npm build.
+- Compile with the standalone Elm compiler (`elm make app/Main.elm --output=public/elm.js --optimize`); the generated `public/elm.js` is ignored and must not be committed.
+- GitHub Pages CI installs the standalone Elm compiler and builds `public/elm.js` before uploading the static artifact; no Node/npm build is used.
+- Verify the static app and JavaScript adapter with a local static file server after compiling Elm.
 - Update `BACKLOG.md` and `README.md` when capabilities, deployment, or database setup change.
 - Inspect the staged diff before committing. Commit only project files related to the task.
-- Do not commit `elm-stuff`, `dist`, credentials, or real personal data.
+- Do not commit generated `public/elm.js`, `elm-stuff`, `dist`, credentials, or real personal data.
 
 ## Scope and safety
 

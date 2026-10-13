@@ -20,6 +20,15 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Install standalone Elm compiler
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz \
+            | gunzip > /tmp/elm
+          chmod +x /tmp/elm
+          sudo mv /tmp/elm /usr/local/bin/elm
+      - name: Compile Elm frontend
+        run: elm make app/Main.elm --output=public/elm.js --optimize
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

@@ -1,4 +1,5 @@
 elm-stuff/
 dist/
+public/elm.js
 .idea/
 .run/
