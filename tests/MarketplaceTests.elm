@@ -211,5 +211,35 @@ tests =
                                 )
                                 Marketplace.sampleListings
                             )
+            , test "decodes rows returned by the ORDS collection endpoint" <|
+                \_ ->
+                    Decode.decodeString
+                        (Decode.field "items" (Decode.list Marketplace.publishedListingDecoder))
+                        """{"items":[{"listing_id":"a1b2c3","title":"Hand saw","category":"Tools","neighborhood":"Maplewood","owner_name":"A neighbor","price_cents":250,"contact":"Signal: @neighbor","emoji":"🪚","art_class":"art-mint","description":"Sharp and ready","expires_at_ms":1792000000000}],"hasMore":false}"""
+                        |> Result.map
+                            (List.map
+                                (\published ->
+                                    let
+                                        listing =
+                                            Marketplace.publishedListing published
+                                    in
+                                    { id = Marketplace.listingId listing
+                                    , title = Marketplace.listingTitle listing
+                                    , priceCents = Marketplace.priceInCents (Marketplace.listingPrice listing)
+                                    , contact = Marketplace.contactText (Marketplace.listingContact listing)
+                                    , expiresAt = Marketplace.listingExpiresAt published
+                                    }
+                                )
+                            )
+                        |> Expect.equal
+                            (Ok
+                                [ { id = "a1b2c3"
+                                  , title = "Hand saw"
+                                  , priceCents = 250
+                                  , contact = "Signal: @neighbor"
+                                  , expiresAt = 1792000000000
+                                  }
+                                ]
+                            )
             ]
         ]

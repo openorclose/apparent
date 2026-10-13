@@ -1,10 +1,6 @@
-module Route.Index exposing (ActionData, Data, Model, Msg, route)
+module Main exposing (main)
 
-import BackendTask exposing (BackendTask)
-import BackendTask.Time
-import Effect exposing (Effect)
-import FatalError exposing (FatalError)
-import Head
+import Browser
 import Html
 import Html.Attributes as Attr
 import Html.Events as Events
@@ -12,14 +8,9 @@ import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Marketplace exposing (Listing)
-import PagesMsg exposing (PagesMsg)
-import RouteBuilder exposing (App, StatefulRoute)
-import Shared
 import String
 import Task
 import Time
-import UrlPath exposing (UrlPath)
-import View exposing (View)
 
 
 type alias Model =
@@ -31,6 +22,7 @@ type alias Model =
     , now : Int
     , sampleListings : List Marketplace.PublishedListing
     , serverListings : List Marketplace.PublishedListing
+    , apiBaseUrl : Maybe String
     , dialog : Dialog
     , draft : ListingDraft
     , submission : Submission
@@ -74,64 +66,36 @@ type Msg
     | ContactChanged String
     | DescriptionChanged String
     | CreateListing
-    | ListingCreated (Result Http.Error Marketplace.PublishedListing)
+    | ListingCreated (Result Http.Error ())
     | ListingsLoaded (Result Http.Error (List Marketplace.PublishedListing))
+    | OrdsConfigured (Result Http.Error String)
     | ClockUpdated Time.Posix
     | OpenListing String
     | CloseListing
     | DismissNotice
 
 
-type alias RouteParams =
-    {}
-
-
-type alias Data =
-    { generatedAt : Int
-    , listings : List Marketplace.PublishedListing
-    }
-
-
-type alias ActionData =
-    {}
-
-
-route : StatefulRoute RouteParams Data ActionData Model Msg
-route =
-    RouteBuilder.single
-        { head = head
-        , data = data
+main : Program () Model Msg
+main =
+    Browser.element
+        { init = init
+        , update = update
+        , subscriptions = subscriptions
+        , view = view
         }
-        |> RouteBuilder.buildWithLocalState
-            { view = view
-            , update = update
-            , subscriptions = subscriptions
-            , init = init
-            }
 
 
-data : BackendTask FatalError Data
-data =
-    BackendTask.map2
-        (\generatedAt listings ->
-            { generatedAt = Time.posixToMillis generatedAt
-            , listings = List.map (Marketplace.publishListing (Time.posixToMillis generatedAt)) listings
-            }
-        )
-        BackendTask.Time.now
-        (BackendTask.succeed Marketplace.sampleListings)
-
-
-init : App Data ActionData RouteParams -> Shared.Model -> ( Model, Effect Msg )
-init app sharedModel =
+init : () -> ( Model, Cmd Msg )
+init _ =
     ( { query = ""
       , category = Nothing
       , neighborhood = Nothing
       , sortOrder = Marketplace.Recommended
       , page = 1
-      , now = app.data.generatedAt
-      , sampleListings = app.data.listings
+      , now = 0
+      , sampleListings = List.map (Marketplace.publishListing 0) Marketplace.sampleListings
       , serverListings = []
+      , apiBaseUrl = Nothing
       , dialog = NoDialog
       , draft =
             { title = ""
@@ -144,39 +108,37 @@ init app sharedModel =
       , submission = ReadyToSubmit
       , notice = Nothing
       }
-    , Effect.batch
-        [ Effect.fromCmd (Task.perform ClockUpdated Time.now)
-        , Effect.fromCmd loadListings
+    , Cmd.batch
+        [ Task.perform ClockUpdated Time.now
+        , Http.get
+            { url = "./ords-config.json"
+            , expect = Http.expectJson OrdsConfigured (Decode.field "apiBaseUrl" Decode.string)
+            }
         ]
     )
 
 
-update :
-    App Data ActionData RouteParams
-    -> Shared.Model
-    -> Msg
-    -> Model
-    -> ( Model, Effect Msg )
-update app shared msg model =
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
     case msg of
         SearchChanged query ->
-            ( { model | query = query, page = 1 }, Effect.none )
+            ( { model | query = query, page = 1 }, Cmd.none )
 
         CategorySelected category ->
-            ( { model | category = category, page = 1 }, Effect.none )
+            ( { model | category = category, page = 1 }, Cmd.none )
 
         NeighborhoodSelected neighborhood ->
             case neighborhood of
                 "" ->
-                    ( { model | neighborhood = Nothing, page = 1 }, Effect.none )
+                    ( { model | neighborhood = Nothing, page = 1 }, Cmd.none )
 
                 name ->
                     case Marketplace.neighborhoodFromName name of
                         Just value ->
-                            ( { model | neighborhood = Just value, page = 1 }, Effect.none )
+                            ( { model | neighborhood = Just value, page = 1 }, Cmd.none )
 
                         Nothing ->
-                            ( model, Effect.none )
+                            ( model, Cmd.none )
 
         SortByPrice ->
             ( { model
@@ -189,64 +151,63 @@ update app shared msg model =
                             Marketplace.Recommended
                 , page = 1
               }
-            , Effect.none
+            , Cmd.none
             )
 
         PageSelected page ->
-            ( { model | page = max 1 page }, Effect.none )
+            ( { model | page = max 1 page }, Cmd.none )
 
         ShowCreateForm ->
-            ( { model | dialog = CreateListingDialog, notice = Nothing }, Effect.none )
+            ( { model | dialog = CreateListingDialog, notice = Nothing }, Cmd.none )
 
         HideCreateForm ->
-            ( { model | dialog = NoDialog }, Effect.none )
+            ( { model | dialog = NoDialog }, Cmd.none )
 
         TitleChanged title ->
-            ( { model | draft = updateDraft model.draft (\draft -> { draft | title = title }) }, Effect.none )
+            ( { model | draft = updateDraft model.draft (\draft -> { draft | title = title }) }, Cmd.none )
 
         CategoryDraftChanged category ->
             case Marketplace.categoryFromName category of
                 Just value ->
-                    ( { model | draft = updateDraft model.draft (\draft -> { draft | category = value }) }, Effect.none )
+                    ( { model | draft = updateDraft model.draft (\draft -> { draft | category = value }) }, Cmd.none )
 
                 Nothing ->
-                    ( model, Effect.none )
+                    ( model, Cmd.none )
 
         NeighborhoodDraftChanged neighborhood ->
             case Marketplace.neighborhoodFromName neighborhood of
                 Just value ->
-                    ( { model | draft = updateDraft model.draft (\draft -> { draft | neighborhood = value }) }, Effect.none )
+                    ( { model | draft = updateDraft model.draft (\draft -> { draft | neighborhood = value }) }, Cmd.none )
 
                 Nothing ->
-                    ( model, Effect.none )
+                    ( model, Cmd.none )
 
         PriceChanged price ->
-            ( { model | draft = updateDraft model.draft (\draft -> { draft | price = price }) }, Effect.none )
+            ( { model | draft = updateDraft model.draft (\draft -> { draft | price = price }) }, Cmd.none )
 
         ContactChanged contact ->
-            ( { model | draft = updateDraft model.draft (\draft -> { draft | contact = contact }) }, Effect.none )
+            ( { model | draft = updateDraft model.draft (\draft -> { draft | contact = contact }) }, Cmd.none )
 
         DescriptionChanged description ->
-            ( { model | draft = updateDraft model.draft (\draft -> { draft | description = description }) }, Effect.none )
+            ( { model | draft = updateDraft model.draft (\draft -> { draft | description = description }) }, Cmd.none )
 
         CreateListing ->
             if model.submission == Submitting then
-                ( model, Effect.none )
+                ( model, Cmd.none )
 
             else
                 submitListing model
 
         ListingCreated result ->
             case result of
-                Ok published ->
+                Ok _ ->
                     ( { model
-                        | serverListings = published :: model.serverListings
-                        , dialog = NoDialog
+                        | dialog = NoDialog
                         , draft = emptyDraft
                         , submission = ReadyToSubmit
                         , notice = Just "Your item is live for the next 7 days. Share your contact details and neighbors can reach you directly."
                       }
-                    , Effect.none
+                    , loadListings model.apiBaseUrl
                     )
 
                 Err error ->
@@ -254,19 +215,45 @@ update app shared msg model =
                         | submission = ReadyToSubmit
                         , notice = Just ("Could not save your listing. " ++ httpErrorMessage error)
                       }
-                    , Effect.none
+                    , Cmd.none
                     )
 
         ListingsLoaded result ->
             case result of
                 Ok listings ->
-                    ( { model | serverListings = mergeListings listings model.serverListings }, Effect.none )
+                    ( { model | serverListings = listings }, Cmd.none )
 
                 Err error ->
                     ( { model
-                        | notice = Just ("Could not load shared listings from the server. " ++ httpErrorMessage error)
+                        | notice = Just ("Could not load shared listings from Oracle REST Data Services. " ++ httpErrorMessage error)
                       }
-                    , Effect.none
+                    , Cmd.none
+                    )
+
+        OrdsConfigured result ->
+            case result of
+                Ok apiBaseUrl ->
+                    let
+                        normalizedUrl =
+                            String.trim apiBaseUrl
+                    in
+                    if String.startsWith "https://" normalizedUrl && String.endsWith "/" normalizedUrl then
+                        ( { model | apiBaseUrl = Just normalizedUrl, notice = Nothing }
+                        , loadListings (Just normalizedUrl)
+                        )
+
+                    else
+                        ( { model
+                            | notice = Just "Set apiBaseUrl in ords-config.json to your HTTPS ORDS collection URL, including its trailing slash."
+                          }
+                        , Cmd.none
+                        )
+
+                Err error ->
+                    ( { model
+                        | notice = Just ("Could not load ords-config.json. " ++ httpErrorMessage error)
+                      }
+                    , Cmd.none
                     )
 
         ClockUpdated currentTime ->
@@ -275,7 +262,11 @@ update app shared msg model =
                     Time.posixToMillis currentTime
 
                 samples =
-                    Marketplace.expireListings now model.sampleListings
+                    if model.now == 0 then
+                        List.map (Marketplace.publishListing now) Marketplace.sampleListings
+
+                    else
+                        Marketplace.expireListings now model.sampleListings
 
                 serverListings =
                     Marketplace.expireListings now model.serverListings
@@ -303,17 +294,17 @@ update app shared msg model =
                 , serverListings = serverListings
                 , dialog = dialog
               }
-            , Effect.fromCmd loadListings
+            , loadListings model.apiBaseUrl
             )
 
         OpenListing listingId ->
-            ( { model | dialog = ListingDetailsDialog listingId, notice = Nothing }, Effect.none )
+            ( { model | dialog = ListingDetailsDialog listingId, notice = Nothing }, Cmd.none )
 
         CloseListing ->
-            ( { model | dialog = NoDialog }, Effect.none )
+            ( { model | dialog = NoDialog }, Cmd.none )
 
         DismissNotice ->
-            ( { model | notice = Nothing }, Effect.none )
+            ( { model | notice = Nothing }, Cmd.none )
 
 
 updateDraft : ListingDraft -> (ListingDraft -> ListingDraft) -> ListingDraft
@@ -321,21 +312,21 @@ updateDraft draft transform =
     transform draft
 
 
-submitListing : Model -> ( Model, Effect Msg )
+submitListing : Model -> ( Model, Cmd Msg )
 submitListing model =
-    case ( Marketplace.priceFromInput model.draft.price, Marketplace.categoryFromName (Marketplace.categoryName model.draft.category) ) of
-        ( Err message, _ ) ->
-            ( { model | notice = Just message }, Effect.none )
+    case ( model.apiBaseUrl, Marketplace.priceFromInput model.draft.price ) of
+        ( Nothing, _ ) ->
+            ( { model | notice = Just "Listings are not connected yet. Configure ords-config.json first." }, Cmd.none )
 
-        ( _, Nothing ) ->
-            ( { model | notice = Just "Choose a valid listing category." }, Effect.none )
+        ( _, Err message ) ->
+            ( { model | notice = Just message }, Cmd.none )
 
-        ( Ok price, Just category ) ->
+        ( Just apiBaseUrl, Ok price ) ->
             case
                 Marketplace.createListing
                     { id = "validation-only"
                     , title = model.draft.title
-                    , category = category
+                    , category = model.draft.category
                     , neighborhood = model.draft.neighborhood
                     , owner = "A neighbor"
                     , price = price
@@ -346,17 +337,15 @@ submitListing model =
                     }
             of
                 Err message ->
-                    ( { model | notice = Just message }, Effect.none )
+                    ( { model | notice = Just message }, Cmd.none )
 
                 Ok _ ->
                     ( { model | submission = Submitting, notice = Nothing }
-                    , Effect.fromCmd
-                        (Http.post
-                            { url = "/api/listings"
-                            , body = Http.jsonBody (listingRequestEncoder model.draft)
-                            , expect = Http.expectJson ListingCreated Marketplace.publishedListingDecoder
-                            }
-                        )
+                    , Http.post
+                        { url = apiBaseUrl
+                        , body = Http.jsonBody (listingRequestEncoder model.draft)
+                        , expect = Http.expectWhatever ListingCreated
+                        }
                     )
 
 
@@ -366,8 +355,16 @@ listingRequestEncoder draft =
         [ ( "title", Encode.string draft.title )
         , ( "category", Encode.string (Marketplace.categoryName draft.category) )
         , ( "neighborhood", Encode.string (Marketplace.neighborhoodName draft.neighborhood) )
-        , ( "price", Encode.string draft.price )
+        , ( "owner_name", Encode.string "A neighbor" )
+        , ( "price_cents"
+          , Marketplace.priceFromInput draft.price
+                |> Result.map Marketplace.priceInCents
+                |> Result.withDefault 0
+                |> Encode.int
+          )
         , ( "contact", Encode.string draft.contact )
+        , ( "emoji", Encode.string "📦" )
+        , ( "art_class", Encode.string "art-mint" )
         , ( "description", Encode.string draft.description )
         ]
 
@@ -383,24 +380,25 @@ emptyDraft =
     }
 
 
-loadListings : Cmd Msg
-loadListings =
-    Http.get
-        { url = "/api/listings"
-        , expect = Http.expectJson ListingsLoaded (Decode.list Marketplace.publishedListingDecoder)
-        }
+loadListings : Maybe String -> Cmd Msg
+loadListings maybeBaseUrl =
+    maybeBaseUrl
+        |> Maybe.map
+            (\baseUrl ->
+                Http.get
+                    { url = baseUrl
+                    , expect = Http.expectJson ListingsLoaded ordsListingsDecoder
+                    }
+            )
+        |> Maybe.withDefault Cmd.none
 
 
-mergeListings : List Marketplace.PublishedListing -> List Marketplace.PublishedListing -> List Marketplace.PublishedListing
-mergeListings latest existing =
-    let
-        latestIds =
-            List.map (Marketplace.listingId << Marketplace.publishedListing) latest
-
-        notAlreadyLoaded listing =
-            not (List.member (Marketplace.listingId (Marketplace.publishedListing listing)) latestIds)
-    in
-    latest ++ List.filter notAlreadyLoaded existing
+ordsListingsDecoder : Decode.Decoder (List Marketplace.PublishedListing)
+ordsListingsDecoder =
+    Decode.oneOf
+        [ Decode.list Marketplace.publishedListingDecoder
+        , Decode.field "items" (Decode.list Marketplace.publishedListingDecoder)
+        ]
 
 
 httpErrorMessage : Http.Error -> String
@@ -422,18 +420,13 @@ httpErrorMessage error =
             "The server returned an unreadable response."
 
 
-subscriptions : RouteParams -> UrlPath -> Shared.Model -> Model -> Sub Msg
-subscriptions routeParams path sharedModel model =
+subscriptions : Model -> Sub Msg
+subscriptions _ =
     Time.every 30000 ClockUpdated
 
 
-head : App Data ActionData RouteParams -> List Head.Tag
-head _ =
-    []
-
-
-view : App Data ActionData RouteParams -> Shared.Model -> Model -> View (PagesMsg Msg)
-view app sharedModel model =
+view : Model -> Html.Html Msg
+view model =
     let
         allListings =
             List.map Marketplace.publishedListing (Marketplace.expireListings model.now (model.sampleListings ++ model.serverListings))
@@ -470,40 +463,55 @@ view app sharedModel model =
                 _ ->
                     Nothing
     in
-    { title = "AppaRent — Good things, shared nearby"
-    , body =
-        [ Html.div [ Attr.class "page-wrap" ]
-            [ hero model
-            , browseSection model visibleListings (List.length filteredListings) pageTotal
-            , Html.section [ Attr.class "community-note" ]
-                [ Html.span [ Attr.class "community-note-icon", Attr.attribute "aria-hidden" "true" ] [ Html.text "✳" ]
-                , Html.div []
-                    [ Html.h2 [] [ Html.text "A little sharing goes a long way." ]
-                    , Html.p [] [ Html.text "Borrow what you need. Lend what you love. Get to know the people just around the corner." ]
-                    ]
-                , Html.button
-                    [ Attr.class "button button-light"
-                    , Events.onClick (PagesMsg.fromMsg ShowCreateForm)
-                    ]
-                    [ Html.text "Share an item" ]
+    Html.div []
+        [ Html.header [ Attr.class "site-header" ]
+            [ Html.a [ Attr.href "./", Attr.class "brand", Attr.attribute "aria-label" "AppaRent home" ]
+                [ Html.span [ Attr.class "brand-mark", Attr.attribute "aria-hidden" "true" ] [ Html.text "a" ]
+                , Html.text "AppaRent"
                 ]
+            , Html.nav [ Attr.class "site-nav", Attr.attribute "aria-label" "Main navigation" ]
+                [ Html.a [ Attr.href "#discover" ] [ Html.text "Explore" ]
+                , Html.a [ Attr.href "#about" ] [ Html.text "How it works" ]
+                ]
+            , Html.a [ Attr.href "#discover", Attr.class "header-link" ] [ Html.text "Find something nearby ↗" ]
             ]
-        , case model.dialog of
-            CreateListingDialog ->
-                createDialog model
+        , Html.main_ []
+            [ Html.div [ Attr.class "page-wrap" ]
+                [ hero model
+                , browseSection model visibleListings (List.length filteredListings) pageTotal
+                , Html.section [ Attr.class "community-note" ]
+                    [ Html.span [ Attr.class "community-note-icon", Attr.attribute "aria-hidden" "true" ] [ Html.text "✳" ]
+                    , Html.div []
+                        [ Html.h2 [] [ Html.text "A little sharing goes a long way." ]
+                        , Html.p [] [ Html.text "Borrow what you need. Lend what you love. Get to know the people just around the corner." ]
+                        ]
+                    , Html.button [ Attr.class "button button-light", Events.onClick ShowCreateForm ] [ Html.text "Share an item" ]
+                    ]
+                ]
+            , case model.dialog of
+                CreateListingDialog ->
+                    createDialog model
 
-            ListingDetailsDialog _ ->
-                activeListing
-                    |> Maybe.map (listingDialog model.now)
-                    |> Maybe.withDefault (Html.text "")
+                ListingDetailsDialog _ ->
+                    activeListing
+                        |> Maybe.map (listingDialog model.now)
+                        |> Maybe.withDefault (Html.text "")
 
-            NoDialog ->
-                Html.text ""
-        , model.notice
-            |> Maybe.map noticeView
-            |> Maybe.withDefault (Html.text "")
+                NoDialog ->
+                    Html.text ""
+            , model.notice
+                |> Maybe.map noticeView
+                |> Maybe.withDefault (Html.text "")
+            ]
+        , Html.footer [ Attr.class "site-footer", Attr.id "about" ]
+            [ Html.a [ Attr.href "./", Attr.class "brand footer-brand" ]
+                [ Html.span [ Attr.class "brand-mark", Attr.attribute "aria-hidden" "true" ] [ Html.text "a" ]
+                , Html.text "AppaRent"
+                ]
+            , Html.p [] [ Html.text "Borrow a little. Share a lot. Make your block feel like home." ]
+            , Html.span [] [ Html.text "Made for good neighbors." ]
+            ]
         ]
-    }
 
 
 sortListings : Marketplace.SortOrder -> List Listing -> List Listing
@@ -516,7 +524,7 @@ sortListings sortOrder listings =
             Marketplace.sortByPrice listings
 
 
-hero : Model -> Html.Html (PagesMsg Msg)
+hero : Model -> Html.Html Msg
 hero model =
     Html.section [ Attr.class "hero" ]
         [ Html.div [ Attr.class "hero-copy" ]
@@ -527,7 +535,7 @@ hero model =
             , Html.div [ Attr.class "hero-actions" ]
                 [ Html.button
                     [ Attr.class "button button-primary"
-                    , Events.onClick (PagesMsg.fromMsg ShowCreateForm)
+                    , Events.onClick ShowCreateForm
                     ]
                     [ Html.text "Share something" ]
                 , Html.a [ Attr.href "#discover", Attr.class "text-link" ] [ Html.text "Explore the neighborhood ↓" ]
@@ -557,7 +565,7 @@ hero model =
         ]
 
 
-browseSection : Model -> List Listing -> Int -> Int -> Html.Html (PagesMsg Msg)
+browseSection : Model -> List Listing -> Int -> Int -> Html.Html Msg
 browseSection model listings resultCount pageTotal =
     Html.section [ Attr.id "discover", Attr.class "browse-section" ]
         [ Html.div [ Attr.class "section-heading" ]
@@ -570,7 +578,7 @@ browseSection model listings resultCount pageTotal =
                 [ Html.span [] [ Html.text "Around" ]
                 , Html.select
                     [ Attr.value (Maybe.map Marketplace.neighborhoodName model.neighborhood |> Maybe.withDefault "")
-                    , Events.onInput (NeighborhoodSelected >> PagesMsg.fromMsg)
+                    , Events.onInput NeighborhoodSelected
                     , Attr.attribute "aria-label" "Filter by neighborhood"
                     ]
                     (Html.option [ Attr.value "" ] [ Html.text "All neighborhoods" ]
@@ -591,7 +599,7 @@ browseSection model listings resultCount pageTotal =
                     [ Attr.type_ "search"
                     , Attr.placeholder "Search for a drill, tent, mixer..."
                     , Attr.value model.query
-                    , Events.onInput (SearchChanged >> PagesMsg.fromMsg)
+                    , Events.onInput SearchChanged
                     , Attr.attribute "aria-label" "Search items and neighbors"
                     ]
                     []
@@ -599,7 +607,7 @@ browseSection model listings resultCount pageTotal =
                     Html.button
                         [ Attr.class "clear-search"
                         , Attr.attribute "aria-label" "Clear search"
-                        , Events.onClick (PagesMsg.fromMsg (SearchChanged ""))
+                        , Events.onClick (SearchChanged "")
                         ]
                         [ Html.text "×" ]
 
@@ -608,7 +616,7 @@ browseSection model listings resultCount pageTotal =
                 ]
             , Html.button
                 [ Attr.class "sort-button"
-                , Events.onClick (PagesMsg.fromMsg SortByPrice)
+                , Events.onClick SortByPrice
                 , Attr.attribute "aria-pressed"
                     (case model.sortOrder of
                         Marketplace.Recommended ->
@@ -644,7 +652,7 @@ browseSection model listings resultCount pageTotal =
                 ]
             , Html.button
                 [ Attr.class "share-inline"
-                , Events.onClick (PagesMsg.fromMsg ShowCreateForm)
+                , Events.onClick ShowCreateForm
                 ]
                 [ Html.text "+ Share an item" ]
             ]
@@ -655,7 +663,7 @@ browseSection model listings resultCount pageTotal =
                 , Html.p [] [ Html.text "Try another search or clear a filter to see more neighborly finds." ]
                 , Html.button
                     [ Attr.class "button button-secondary"
-                    , Events.onClick (PagesMsg.fromMsg (SearchChanged ""))
+                    , Events.onClick (SearchChanged "")
                     ]
                     [ Html.text "Clear search" ]
                 ]
@@ -670,7 +678,7 @@ browseSection model listings resultCount pageTotal =
         ]
 
 
-categoryButton : Maybe Marketplace.Category -> Maybe Marketplace.Category -> Html.Html (PagesMsg Msg)
+categoryButton : Maybe Marketplace.Category -> Maybe Marketplace.Category -> Html.Html Msg
 categoryButton activeCategory category =
     let
         label =
@@ -689,7 +697,7 @@ categoryButton activeCategory category =
              else
                 "category-chip"
             )
-        , Events.onClick (PagesMsg.fromMsg (CategorySelected category))
+        , Events.onClick (CategorySelected category)
         , Attr.attribute "aria-pressed"
             (if isActive then
                 "true"
@@ -701,12 +709,12 @@ categoryButton activeCategory category =
         [ Html.text label ]
 
 
-listingCard : Listing -> Html.Html (PagesMsg Msg)
+listingCard : Listing -> Html.Html Msg
 listingCard listing =
     Html.article [ Attr.class "listing-card" ]
         [ Html.button
             [ Attr.class ("listing-art " ++ Marketplace.listingArtClass listing)
-            , Events.onClick (PagesMsg.fromMsg (OpenListing (Marketplace.listingId listing)))
+            , Events.onClick (OpenListing (Marketplace.listingId listing))
             , Attr.attribute "aria-label" ("View " ++ Marketplace.listingTitle listing)
             ]
             [ Html.span [ Attr.class "listing-emoji", Attr.attribute "aria-hidden" "true" ] [ Html.text (Marketplace.listingEmoji listing) ]
@@ -723,33 +731,33 @@ listingCard listing =
                 ]
             , Html.button
                 [ Attr.class "card-link"
-                , Events.onClick (PagesMsg.fromMsg (OpenListing (Marketplace.listingId listing)))
+                , Events.onClick (OpenListing (Marketplace.listingId listing))
                 ]
                 [ Html.text "Take a closer look ↗" ]
             ]
         ]
 
 
-pagination : Int -> Int -> Html.Html (PagesMsg Msg)
+pagination : Int -> Int -> Html.Html Msg
 pagination current total =
     Html.nav [ Attr.class "pagination", Attr.attribute "aria-label" "Listing pages" ]
         [ Html.button
             [ Attr.class "page-button"
             , Attr.disabled (current <= 1)
-            , Events.onClick (PagesMsg.fromMsg (PageSelected (current - 1)))
+            , Events.onClick (PageSelected (current - 1))
             ]
             [ Html.text "← Previous" ]
         , Html.span [] [ Html.text ("Page " ++ String.fromInt current ++ " of " ++ String.fromInt total) ]
         , Html.button
             [ Attr.class "page-button"
             , Attr.disabled (current >= total)
-            , Events.onClick (PagesMsg.fromMsg (PageSelected (current + 1)))
+            , Events.onClick (PageSelected (current + 1))
             ]
             [ Html.text "Next →" ]
         ]
 
 
-createDialog : Model -> Html.Html (PagesMsg Msg)
+createDialog : Model -> Html.Html Msg
 createDialog model =
     Html.div [ Attr.class "dialog-backdrop", Attr.attribute "role" "presentation" ]
         [ Html.section [ Attr.class "dialog", Attr.attribute "role" "dialog", Attr.attribute "aria-modal" "true", Attr.attribute "aria-labelledby" "create-title" ]
@@ -768,7 +776,7 @@ createDialog model =
                     [ Attr.value model.draft.title
                     , Attr.placeholder "e.g. Cordless drill set"
                     , Attr.maxlength 120
-                    , Events.onInput (TitleChanged >> PagesMsg.fromMsg)
+                    , Events.onInput TitleChanged
                     ]
                     []
                 ]
@@ -777,7 +785,7 @@ createDialog model =
                     [ Html.text "Category"
                     , Html.select
                         [ Attr.value (Marketplace.categoryName model.draft.category)
-                        , Events.onInput (CategoryDraftChanged >> PagesMsg.fromMsg)
+                        , Events.onInput CategoryDraftChanged
                         ]
                         (List.map
                             (\category ->
@@ -792,7 +800,7 @@ createDialog model =
                     [ Html.text "Neighborhood"
                     , Html.select
                         [ Attr.value (Marketplace.neighborhoodName model.draft.neighborhood)
-                        , Events.onInput (NeighborhoodDraftChanged >> PagesMsg.fromMsg)
+                        , Events.onInput NeighborhoodDraftChanged
                         ]
                         (List.map
                             (\neighborhood ->
@@ -813,7 +821,7 @@ createDialog model =
                         , Attr.min "0"
                         , Attr.step "0.01"
                         , Attr.value model.draft.price
-                        , Events.onInput (PriceChanged >> PagesMsg.fromMsg)
+                        , Events.onInput PriceChanged
                         ]
                         []
                     , Html.span [] [ Html.text "per day" ]
@@ -826,7 +834,7 @@ createDialog model =
                     , Attr.placeholder "Phone, email, Telegram, WhatsApp, or any other contact details"
                     , Attr.rows 2
                     , Attr.maxlength 500
-                    , Events.onInput (ContactChanged >> PagesMsg.fromMsg)
+                    , Events.onInput ContactChanged
                     ]
                     []
                 ]
@@ -837,7 +845,7 @@ createDialog model =
                     , Attr.placeholder "What should a neighbor know before borrowing it?"
                     , Attr.rows 3
                     , Attr.maxlength 2000
-                    , Events.onInput (DescriptionChanged >> PagesMsg.fromMsg)
+                    , Events.onInput DescriptionChanged
                     ]
                     []
                 ]
@@ -845,13 +853,13 @@ createDialog model =
                 [ Html.button
                     [ Attr.class "button button-secondary"
                     , Attr.disabled (model.submission == Submitting)
-                    , Events.onClick (PagesMsg.fromMsg HideCreateForm)
+                    , Events.onClick HideCreateForm
                     ]
                     [ Html.text "Maybe later" ]
                 , Html.button
                     [ Attr.class "button button-primary"
                     , Attr.disabled (model.submission == Submitting)
-                    , Events.onClick (PagesMsg.fromMsg CreateListing)
+                    , Events.onClick CreateListing
                     ]
                     [ Html.text
                         (case model.submission of
@@ -867,7 +875,7 @@ createDialog model =
         ]
 
 
-listingDialog : Int -> Marketplace.PublishedListing -> Html.Html (PagesMsg Msg)
+listingDialog : Int -> Marketplace.PublishedListing -> Html.Html Msg
 listingDialog now published =
     let
         listing =
@@ -909,24 +917,24 @@ listingDialog now published =
         ]
 
 
-closeButton : Msg -> Html.Html (PagesMsg Msg)
+closeButton : Msg -> Html.Html Msg
 closeButton msg =
     Html.button
         [ Attr.class "close-button"
         , Attr.attribute "aria-label" "Close dialog"
-        , Events.onClick (PagesMsg.fromMsg msg)
+        , Events.onClick msg
         ]
         [ Html.text "×" ]
 
 
-noticeView : String -> Html.Html (PagesMsg Msg)
+noticeView : String -> Html.Html Msg
 noticeView message =
     Html.div [ Attr.class "notice", Attr.attribute "role" "status" ]
         [ Html.p [] [ Html.text message ]
         , Html.button
             [ Attr.class "notice-close"
             , Attr.attribute "aria-label" "Dismiss message"
-            , Events.onClick (PagesMsg.fromMsg DismissNotice)
+            , Events.onClick DismissNotice
             ]
             [ Html.text "×" ]
         ]

@@ -2,26 +2,16 @@
   "name": "apparent",
   "type": "module",
   "scripts": {
-    "dev": "elm-pages dev",
+    "dev": "npm run build && python3 -m http.server 8000 --directory public",
     "start": "npm run dev",
-    "serve": "node server.mjs",
-    "build": "elm-pages build",
+    "build": "elm make app/Main.elm --output=public/elm.js --optimize",
     "test": "elm-test",
     "format": "elm-format app src tests --yes",
     "format:check": "elm-format app src tests --validate"
   },
   "devDependencies": {
     "elm": "^0.19.1-6",
-    "elm-codegen": "^0.6.3",
     "elm-format": "^0.8.8",
-    "elm-pages": "^3.5.0",
-    "elm-review": "^2.13.5",
-    "elm-test": "^0.19.1-revision17",
-    "lamdera": "^0.19.1-1.4.0",
-    "vite": "^7.3.2"
-  },
-  "dependencies": {
-    "@netlify/functions": "^5.2.0",
-    "oracledb": "^6.10.0"
+    "elm-test": "^0.19.1-revision17"
   }
 }

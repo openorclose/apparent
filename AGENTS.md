@@ -1,29 +1,27 @@
 # AppaRent Contribution Guide
 
-AppaRent is a neighborhood marketplace prototype built with Elm and elm-pages. Prefer Elm for application behavior and presentation. Node.js is required by elm-pages' framework runtime and command-line tooling, but do not move application logic into JavaScript.
+AppaRent is a static Elm marketplace frontend hosted on GitHub Pages and connected directly from browsers to Oracle Autonomous Database through Oracle REST Data Services (ORDS). There is no application server. Node.js/npm are development tooling only; application behavior belongs in Elm.
 
 ## Architecture
 
-- Use elm-pages routes, `BackendTask`, and forms according to the existing framework patterns. Do not introduce a second router or a separate HTTP backend without updating this guide and the backlog.
-- Keep domain rules and validation in pure Elm modules so they can be tested independently of page rendering.
-- Prefer custom types for finite choices and validated values. Use smart constructors for values with invariants, and model mutually exclusive UI modes with custom types rather than parallel booleans and `Maybe` fields.
-- Use records for cohesive data that can validly exist together; do not force records onto finite alternatives or mutually exclusive states.
-- Keep database access behind the smallest possible elm-pages `BackendTask.Custom` adapter. Validate, encode, decode, expire, and otherwise interpret listing content in Elm; Node code should perform only Oracle connectivity and parameterized SQL.
-- Keep `server.mjs` as a thin OCI HTTP/static-asset adapter over the generated elm-pages server handler; route and page behavior stays in Elm.
-- Treat all user-submitted values as untrusted. Validate values at the server boundary as well as in the UI.
-- The prototype is not an authenticated or multi-user production service. Do not treat a client-provided profile identifier as authorization or enter real personal information.
-- Be explicit about persistence and deployment assumptions. Do not imply that in-memory or browser-local data is shared or durable.
+- Keep UI and HTTP behavior in the Elm `Browser.element` app at `app/Main.elm`.
+- Keep listing invariants, validation, JSON codecs, and expiry in pure Elm modules under `src/`.
+- Keep the REST contract and database-side validation/expiry in `sql/oracle-ords.sql`. The ORDS module exposes only the collection GET and create POST handlers.
+- Never put database credentials, access tokens, wallet data, or other secrets in browser code, static configuration, or Git. Static clients cannot keep secrets.
+- Treat all browser submissions as untrusted. Validate in Elm for UX and enforce the same constraints in ORDS and Oracle.
+- CORS is not authentication. Public write endpoints can be called outside browsers and need deliberate abuse controls before production use.
+- Explicitly document that GitHub Pages serves static files only and that requests depend on a separate reachable ORDS endpoint.
 
 ## Development
 
-- Prefer small, typed Elm modules and explicit custom types over stringly typed state.
-- Add or update tests for domain behavior and user-visible workflows.
-- Format Elm files with `elm-format`; keep JavaScript and JSON consistent with the existing project tooling.
-- Run the focused tests and build after each coherent change. Before completing work, run the project-wide test, format, and build commands documented in `README.md`.
-- Update `BACKLOG.md` when completing or reprioritizing work, and update `README.md` when setup or capabilities change.
+- Prefer custom types, smart constructors, and small Elm modules over stringly typed state.
+- Add/update Elm tests for domain behavior and the ORDS JSON contract.
+- Format Elm files with `elm-format`; keep JSON, SQL, YAML, and Markdown consistent with existing styles.
+- Run `npm test`, `npm run format:check`, and `npm run build` before completing coherent changes.
+- Update `BACKLOG.md` and `README.md` when capabilities, deployment, or database setup change.
 - Inspect the staged diff before committing. Commit only project files related to the task.
-- Do not commit `node_modules`, `elm-stuff`, generated build output, IDE metadata, credentials, or real personal data.
+- Do not commit generated `public/elm.js`, `elm-stuff`, `dist`, credentials, or real personal data.
 
 ## Scope and safety
 
-The current marketplace stores server-created listings in Oracle Autonomous Database. The elm-pages API uses the Oracle Node driver through a small custom backend adapter; the app needs an Oracle-capable Node server and a network path to the database. Listings expire after seven days and expired rows are deleted on a subsequent listings API request. Sample listings are generated with the build and are separate from the database. Authentication, ownership, payments, moderation, dispute handling, durable notifications, backups, and production data retention require deliberate design before public deployment.
+Listings are public, unauthenticated submissions with free-form public contact details. Oracle creates listing IDs and seven-day expiries; the public GET endpoint omits expired rows, and a scheduled database job permanently deletes them hourly. This prototype has no accounts, ownership, moderation, or abuse controls and is not suitable for unrestricted production traffic or real personal information.

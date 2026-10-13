@@ -34,6 +34,7 @@ module Marketplace exposing
     , paginate
     , priceFromCents
     , priceFromInput
+    , priceInCents
     , priceLabel
     , publishListing
     , publishedListing
@@ -520,7 +521,7 @@ publishedListingEncoder (PublishedListing (Listing fields) expiresAt) =
         , ( "category", Encode.string (categoryName fields.category) )
         , ( "neighborhood", Encode.string (neighborhoodName fields.neighborhood) )
         , ( "owner", Encode.string fields.owner )
-        , ( "priceCents", Encode.int (priceCents fields.price) )
+        , ( "priceCents", Encode.int (priceInCents fields.price) )
         , ( "contact", Encode.string (contactText fields.contact) )
         , ( "emoji", Encode.string fields.emoji )
         , ( "artClass", Encode.string fields.artClass )
@@ -573,12 +574,12 @@ publishedListingDecoder =
                 , expiresAt = 0
                 }
             )
-            (Decode.field "id" Decode.string)
+            (wireField "id" "listing_id" Decode.string)
             (Decode.field "title" Decode.string)
             (Decode.field "category" Decode.string)
             (Decode.field "neighborhood" Decode.string)
-            (Decode.field "owner" Decode.string)
-            (Decode.field "priceCents" Decode.int)
+            (wireField "owner" "owner_name" Decode.string)
+            (wireField "priceCents" "price_cents" Decode.int)
             (Decode.field "contact" Decode.string)
             (Decode.field "emoji" Decode.string)
             |> Decode.andThen
@@ -591,15 +592,33 @@ publishedListingDecoder =
                                 , expiresAt = expiresAt
                             }
                         )
-                        (Decode.field "artClass" Decode.string)
-                        (Decode.field "description" Decode.string)
-                        (Decode.field "expiresAt" Decode.int)
+                        (wireField "artClass" "art_class" Decode.string)
+                        (optionalWireText "description")
+                        (wireField "expiresAt" "expires_at_ms" Decode.int)
                 )
         )
 
 
-priceCents : Price -> Int
-priceCents price =
+wireField : String -> String -> Decoder a -> Decoder a
+wireField camelCase snakeCase decoder =
+    Decode.oneOf
+        [ Decode.field camelCase decoder
+        , Decode.field snakeCase decoder
+        , Decode.field (String.toUpper snakeCase) decoder
+        ]
+
+
+optionalWireText : String -> Decoder String
+optionalWireText fieldName =
+    Decode.oneOf
+        [ Decode.field fieldName Decode.string
+        , Decode.field fieldName (Decode.null "")
+        , Decode.succeed ""
+        ]
+
+
+priceInCents : Price -> Int
+priceInCents price =
     case price of
         Free ->
             0
