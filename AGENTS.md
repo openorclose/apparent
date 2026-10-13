@@ -8,7 +8,8 @@ AppaRent is a neighborhood marketplace prototype built with Elm and elm-pages. P
 - Keep domain rules and validation in pure Elm modules so they can be tested independently of page rendering.
 - Prefer custom types for finite choices and validated values. Use smart constructors for values with invariants, and model mutually exclusive UI modes with custom types rather than parallel booleans and `Maybe` fields.
 - Use records for cohesive data that can validly exist together; do not force records onto finite alternatives or mutually exclusive states.
-- Keep file persistence behind the smallest possible elm-pages `BackendTask.Custom` adapter. Validate, encode, decode, expire, and otherwise interpret listing content in Elm; Node code should perform only the filesystem boundary operations.
+- Keep database access behind the smallest possible elm-pages `BackendTask.Custom` adapter. Validate, encode, decode, expire, and otherwise interpret listing content in Elm; Node code should perform only Oracle connectivity and parameterized SQL.
+- Keep `server.mjs` as a thin OCI HTTP/static-asset adapter over the generated elm-pages server handler; route and page behavior stays in Elm.
 - Treat all user-submitted values as untrusted. Validate values at the server boundary as well as in the UI.
 - The prototype is not an authenticated or multi-user production service. Do not treat a client-provided profile identifier as authorization or enter real personal information.
 - Be explicit about persistence and deployment assumptions. Do not imply that in-memory or browser-local data is shared or durable.
@@ -25,4 +26,4 @@ AppaRent is a neighborhood marketplace prototype built with Elm and elm-pages. P
 
 ## Scope and safety
 
-The current marketplace stores server-created listings as individual text files in `data/listings/`. A deployment must provide persistent writable local storage for this to be durable; serverless ephemeral filesystems are not suitable. Listings expire after seven days and are permanently deleted on a subsequent listings API request. Sample listings are generated with the build and are separate from the server file store. Authentication, ownership, payments, moderation, dispute handling, durable notifications, backups, and production data retention require deliberate design before public deployment.
+The current marketplace stores server-created listings in Oracle Autonomous Database. The elm-pages API uses the Oracle Node driver through a small custom backend adapter; the app needs an Oracle-capable Node server and a network path to the database. Listings expire after seven days and expired rows are deleted on a subsequent listings API request. Sample listings are generated with the build and are separate from the database. Authentication, ownership, payments, moderation, dispute handling, durable notifications, backups, and production data retention require deliberate design before public deployment.

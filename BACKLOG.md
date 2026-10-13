@@ -16,7 +16,7 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 - [ ] **P1** Let listing owners manage availability and remove listings safely.
 - [x] **P1** Add in-page listing details and a server-backed create listing flow.
 - [x] **P1** Let a sharer provide free-form public contact information and have neighbors contact them directly outside the app.
-- [x] **P1** Persist each new listing to its own text file and permanently remove it after seven days.
+- [x] **P1** Persist listings in Oracle Database and permanently remove them after seven days.
 - [ ] **P1** Add dated borrowing requests with overlap checks, owner decisions, and renter cancellation.
 
 ## Trust and engagement
@@ -37,4 +37,4 @@ Priorities: **P0** runnable foundation, **P1** core marketplace, **P2** trust an
 
 - [ ] **P1** Add CI for Elm formatting, pure domain tests, and elm-pages production builds.
 - [ ] **P2** Add route-level interaction tests for marketplace filters and listing creation.
-- [ ] **P2** Replace the local file store with a durable shared database before deploying to ephemeral or multi-instance hosting.
+- [ ] **P2** Add database-backed authentication, ownership, and listing management before enabling multi-user actions.

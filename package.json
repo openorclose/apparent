@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "elm-pages dev",
     "start": "npm run dev",
+    "serve": "node server.mjs",
     "build": "elm-pages build",
     "test": "elm-test",
     "format": "elm-format app src tests --yes",
@@ -20,6 +21,7 @@
     "vite": "^7.3.2"
   },
   "dependencies": {
-    "@netlify/functions": "^5.2.0"
+    "@netlify/functions": "^5.2.0",
+    "oracledb": "^6.10.0"
   }
 }

@@ -2,6 +2,9 @@ node_modules/
 elm-stuff/
 dist/
 .elm-pages/
+.env
+.env.*
+!.env.example
 functions/render/elm-pages-cli.mjs
 functions/server-render/elm-pages-cli.mjs
 .idea/

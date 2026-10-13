@@ -15,8 +15,9 @@ import Server.Response as Response
 import Time
 
 
-type alias StoredFile =
+type alias StoredListing =
     { id : String
+    , expiresAt : Int
     , contents : String
     }
 
@@ -68,38 +69,23 @@ listingsApi request =
 
 getListings : Server.Request.Request -> BackendTask FatalError (Response.Response Never Never)
 getListings request =
-    BackendTask.Custom.run "readListingFiles" Encode.null (Decode.list storedFileDecoder)
+    let
+        now =
+            Time.posixToMillis (Server.Request.requestTime request)
+    in
+    BackendTask.Custom.run
+        "readListingRows"
+        (Encode.object [ ( "now", Encode.int now ) ])
+        (Decode.list storedListingDecoder)
         |> BackendTask.allowFatal
         |> BackendTask.andThen
-            (\files ->
-                case decodeStoredFiles files of
+            (\rows ->
+                case decodeStoredListings rows of
                     Err message ->
                         BackendTask.fail (FatalError.fromString ("Unable to read stored listing: " ++ message))
 
                     Ok listings ->
-                        let
-                            requestTime =
-                                Time.posixToMillis (Server.Request.requestTime request)
-
-                            expired =
-                                List.filter
-                                    (\published -> Marketplace.listingExpiresAt published <= requestTime)
-                                    listings
-
-                            active =
-                                Marketplace.expireListings requestTime listings
-                        in
-                        if List.isEmpty expired then
-                            activeListingsResponse active
-
-                        else
-                            BackendTask.Custom.run
-                                "deleteListingFiles"
-                                (Encode.list Encode.string (List.map (Marketplace.listingId << Marketplace.publishedListing) expired))
-                                Decode.bool
-                                |> BackendTask.allowFatal
-                                |> BackendTask.andThen
-                                    (\_ -> activeListingsResponse active)
+                        activeListingsResponse (Marketplace.expireListings now listings)
             )
 
 
@@ -145,10 +131,11 @@ createListing request raw =
                                     writeInput =
                                         Encode.object
                                             [ ( "id", Encode.string id )
+                                            , ( "expiresAt", Encode.int (Marketplace.listingExpiresAt published) )
                                             , ( "contents", Encode.string contents )
                                             ]
                                 in
-                                BackendTask.Custom.run "writeListingFile" writeInput Decode.bool
+                                BackendTask.Custom.run "insertListing" writeInput Decode.bool
                                     |> BackendTask.allowFatal
                                     |> BackendTask.map
                                         (\_ ->
@@ -186,30 +173,34 @@ listingRequestDecoder =
         (Decode.field "description" Decode.string)
 
 
-storedFileDecoder : Decoder StoredFile
-storedFileDecoder =
-    Decode.map2 StoredFile
+storedListingDecoder : Decoder StoredListing
+storedListingDecoder =
+    Decode.map3 StoredListing
         (Decode.field "id" Decode.string)
+        (Decode.field "expiresAt" Decode.int)
         (Decode.field "contents" Decode.string)
 
 
-decodeStoredFiles : List StoredFile -> Result String (List Marketplace.PublishedListing)
-decodeStoredFiles files =
+decodeStoredListings : List StoredListing -> Result String (List Marketplace.PublishedListing)
+decodeStoredListings rows =
     List.foldr
-        (\file result ->
-            case Decode.decodeString Marketplace.publishedListingDecoder file.contents of
+        (\row result ->
+            case Decode.decodeString Marketplace.publishedListingDecoder row.contents of
                 Err error ->
                     Err (Decode.errorToString error)
 
                 Ok published ->
-                    if Marketplace.listingId (Marketplace.publishedListing published) /= file.id then
-                        Err "The listing ID does not match its text filename."
+                    if Marketplace.listingId (Marketplace.publishedListing published) /= row.id then
+                        Err "The listing ID does not match the database row."
+
+                    else if Marketplace.listingExpiresAt published /= row.expiresAt then
+                        Err "The listing expiry does not match the database row."
 
                     else
                         Result.map ((::) published) result
         )
         (Ok [])
-        files
+        rows
 
 
 activeListingsResponse : List Marketplace.PublishedListing -> BackendTask FatalError (Response.Response Never Never)
