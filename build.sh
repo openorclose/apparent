@@ -11,7 +11,7 @@ if [[ $(elm --version) != "0.19.3" ]]; then
 fi
 
 ## BUILD
-elm make src/Main.elm --output public/elm.js --optimize
+elm make app/Main.elm --output public/elm.js --optimize
 
 ## CLEAN UP, cloudflare pages will reject the node_module size of >25mb
 rm -rf node_modules
